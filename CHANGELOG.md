@@ -72,3 +72,9 @@ All features work end-to-end: lookup word → save to SQLite → review via SRS 
 - `app/api/words/route.ts`: removed invalid `lastReviewed: null` values and guarded against a null created word
 - `components/ui/Card.tsx`: added the `destructive` variant already used by the words import result card
 - `next-pwa.d.ts`: added ambient module types for `next-pwa`; removed the `as any` cast in `next.config.ts`
+
+## [2026-11-02] Vercel Build: Types and Viewport Metadata
+- Added `@types/better-sqlite3` as a devDependency so `next build` type-check no longer fails with `TS7016: Could not find a declaration file for module 'better-sqlite3'`
+- Refreshed `package-lock.json` (it was missing the `@libsql/*` tree) and `bun.lock` so installs are reproducible
+- `tsconfig.json`: limited implicit ambient types to `["node"]`, preventing the deprecated `@types/minimatch` stub from failing `tsc` with `TS2688`
+- `app/layout.tsx`: moved `themeColor` from `metadata` to the `viewport` export and dropped the duplicate manual `<meta name="theme-color">`; eliminates the per-route `Unsupported metadata themeColor` build warnings
