@@ -51,7 +51,7 @@ export default function ReviewHistoryPage() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <NavBar />
-        <div className="max-w-4xl mx-auto py-12 text-center">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12 text-center">
           <p className="text-gray-500 dark:text-gray-400">Loading...</p>
         </div>
       </div>
@@ -61,7 +61,7 @@ export default function ReviewHistoryPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <NavBar />
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Review History</h1>
           <p className="text-gray-600 dark:text-gray-400">

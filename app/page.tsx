@@ -6,7 +6,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       <NavBar />
       
-      <main className="flex-1 max-w-4xl mx-auto w-full py-12 flex flex-col items-center">
+      <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col items-center">
         <div className="text-center mb-12">
           <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Learn Vocabulary Effectively</h2>
           <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl">
