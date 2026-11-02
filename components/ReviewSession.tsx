@@ -23,7 +23,7 @@ export function ReviewSession() {
   const [stats, setStats] = useState<any>({ due: 0, total: 0, newWords: 0 });
   const [loading, setLoading] = useState(true);
   const [sessionComplete, setSessionComplete] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [pendingRating, setPendingRating] = useState<Rating | null>(null);
 
   const fetchReviews = async () => {
     setLoading(true);
@@ -61,9 +61,9 @@ export function ReviewSession() {
 
   const handleRate = useCallback(async (rating: Rating) => {
     const currentReview = reviews[currentIndex];
-    if (!currentReview || submitting) return;
+    if (!currentReview || pendingRating) return;
     
-    setSubmitting(true);
+    setPendingRating(rating);
     
     try {
       const response = await fetch("/api/reviews", {
@@ -74,6 +74,11 @@ export function ReviewSession() {
       
       if (!response.ok) {
         throw new Error("Failed to submit review");
+      }
+
+      const ratedDueReview = mode === "review";
+      if (ratedDueReview) {
+        setStats((prev: { due: number; total: number; newWords: number }) => ({ ...prev, due: Math.max(0, prev.due - 1) }));
       }
       
       if (currentIndex < reviews.length - 1) {
@@ -86,9 +91,9 @@ export function ReviewSession() {
       console.error("Review submission error:", error);
       alert("Failed to submit review. Please try again.");
     } finally {
-      setSubmitting(false);
+      setPendingRating(null);
     }
-  }, [reviews, currentIndex, submitting]);
+  }, [reviews, currentIndex, pendingRating, mode]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -273,10 +278,10 @@ export function ReviewSession() {
                       <Button
                         key={rating}
                         onClick={() => handleRate(rating)}
-                        loading={submitting}
+                        loading={pendingRating === rating}
                         variant="primary"
                         className={`${RATING_CONFIG[rating].color} text-white py-3 text-sm`}
-                        disabled={submitting}
+                        disabled={pendingRating !== null}
                       >
                         {RATING_CONFIG[rating].label}
                       </Button>
