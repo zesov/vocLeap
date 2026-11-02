@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type MouseEvent } from "react";
 import NavBar from "@/components/NavBar";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -128,6 +128,13 @@ export function ReviewSession() {
     return `${Math.round(interval / 365)} years`;
   };
 
+  const handleCardToggle = (event: MouseEvent<HTMLDivElement>) => {
+    if (!window.matchMedia("(max-width: 767px)").matches || pendingRating) return;
+    if (!(event.target instanceof HTMLElement)) return;
+    if (event.target.closest("button, audio, a, input, select, textarea")) return;
+    setShowAnswer((prev) => !prev);
+  };
+
   if (loading) {
     return (
       <div className="max-w-2xl mx-auto">
@@ -225,7 +232,10 @@ export function ReviewSession() {
             )}
           </div>
         </CardHeader>
-        <CardContent className="pt-0">
+        <CardContent
+          className="pt-0 touch-manipulation cursor-pointer md:cursor-default"
+          onClick={handleCardToggle}
+        >
           <div className="text-center">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
               {currentReview?.word?.word || "Word"}
