@@ -95,3 +95,8 @@ All features work end-to-end: lookup word → save to SQLite → review via SRS 
 - `components/DictionaryLookup.tsx`: accepts an `initialWord` prop, auto-looks it up once, and reuses a shared `lookupWord()` for form submissions
 - `components/ReviewSession.tsx`: icon is a 44px `Link` and does not trigger the mobile tap-to-toggle answer
 
+## [2026-11-03] Review Session Resume Position
+- `/review` now remembers the current card across refreshes, with independent progress for Review and New Words modes
+- Progress is stored in `localStorage` as `{ wordId, position }`; after refetch, the card is restored by `wordId` and the cumulative counter stays accurate (e.g. "Review 11 of 50" instead of resetting to 1)
+- Saved progress is cleared when the session completes or the queue is empty; stale `wordId`, invalid JSON, and unavailable storage fall back safely
+
