@@ -83,3 +83,9 @@ All features work end-to-end: lookup word → save to SQLite → review via SRS 
 - "Due Now" stat on `/review` now decrements immediately after rating a card in review mode, instead of waiting for a refetch
 - Rating buttons now show the loading spinner only on the clicked Again/Hard/Good/Easy button; all four stay disabled during submission to prevent double submits
 
+## [2026-11-03] Mobile Navigation and Responsive Padding
+- `components/NavBar.tsx`: responsive header — inline nav links on `md+`, hamburger toggle with animated 2×2 link panel below `md`
+- Mobile menu closes on route change, Escape, or link tap; links use 44px touch targets and `aria-current` for the active page
+- Header is now sticky; nav horizontal padding matches page content (`px-4 sm:px-6`) so edges align on desktop
+- Added consistent content padding across `/`, `/dictionary`, `/review`, `/review-history`, and `/words`: `px-4 sm:px-6` with `py-6 sm:py-8` (home uses `py-8 sm:py-12`), so content no longer touches screen edges on mobile
+
