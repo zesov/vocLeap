@@ -16,15 +16,73 @@ const RATING_CONFIG: Record<Rating, { label: string; color: string; description:
   easy: { label: "Easy", color: "bg-green-600 hover:bg-green-700", description: "Instant recall" },
 };
 
+type SavedPosition = { wordId: number; position: number };
+
+const POSITION_KEY_PREFIX = "vocleap:review-position";
+
+function positionKey(mode: Mode) {
+  return `${POSITION_KEY_PREFIX}:${mode}`;
+}
+
+function readSavedPosition(mode: Mode): SavedPosition | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(positionKey(mode));
+    if (!raw) return null;
+
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("wordId" in parsed) ||
+      !("position" in parsed)
+    ) {
+      return null;
+    }
+
+    const { wordId, position } = parsed;
+    if (typeof wordId !== "number" || typeof position !== "number") return null;
+
+    return { wordId, position };
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedPosition(mode: Mode, position: SavedPosition) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(positionKey(mode), JSON.stringify(position));
+  } catch {
+    return;
+  }
+}
+
+function clearSavedPosition(mode: Mode) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(positionKey(mode));
+  } catch {
+    return;
+  }
+}
+
 export function ReviewSession() {
   const [mode, setMode] = useState<Mode>("review");
   const [reviews, setReviews] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [reviewedBeforeBatch, setReviewedBeforeBatch] = useState(0);
+  const [loadedMode, setLoadedMode] = useState<Mode | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
   const [stats, setStats] = useState<any>({ due: 0, total: 0, newWords: 0 });
   const [loading, setLoading] = useState(true);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [pendingRating, setPendingRating] = useState<Rating | null>(null);
+
+  const totalReviews = reviewedBeforeBatch + reviews.length;
 
   const fetchReviews = async () => {
     setLoading(true);
@@ -46,9 +104,23 @@ export function ReviewSession() {
       
       setReviews(reviewsData);
       setStats(statsData);
-      setCurrentIndex(0);
+
+      const saved = readSavedPosition(mode);
+      const savedIndex = saved
+        ? reviewsData.findIndex((review: { wordId: number }) => review.wordId === saved.wordId)
+        : -1;
+      const restoredOffset =
+        saved && savedIndex >= 0 ? Math.max(0, saved.position - savedIndex - 1) : 0;
+
+      setCurrentIndex(saved && savedIndex >= 0 ? savedIndex : 0);
+      setReviewedBeforeBatch(restoredOffset);
       setShowAnswer(false);
       setSessionComplete(reviewsData.length === 0);
+      setLoadedMode(mode);
+
+      if (reviewsData.length === 0) {
+        clearSavedPosition(mode);
+      }
     } catch (error) {
       console.error("Failed to fetch reviews:", error);
     } finally {
@@ -59,6 +131,18 @@ export function ReviewSession() {
   useEffect(() => {
     fetchReviews();
   }, [mode]);
+
+  useEffect(() => {
+    if (loading || sessionComplete || loadedMode !== mode) return;
+
+    const review = reviews[currentIndex];
+    if (!review) return;
+
+    writeSavedPosition(mode, {
+      wordId: review.wordId,
+      position: reviewedBeforeBatch + currentIndex + 1,
+    });
+  }, [loading, sessionComplete, loadedMode, mode, reviews, currentIndex, reviewedBeforeBatch]);
 
   const handleRate = useCallback(async (rating: Rating) => {
     const currentReview = reviews[currentIndex];
@@ -87,6 +171,7 @@ export function ReviewSession() {
         setShowAnswer(false);
       } else {
         setSessionComplete(true);
+        clearSavedPosition(mode);
       }
     } catch (error) {
       console.error("Review submission error:", error);
@@ -160,7 +245,7 @@ export function ReviewSession() {
                 ? mode === "new" 
                   ? "No new words to learn. All words have been reviewed!" 
                   : "No words due for review right now. Come back later!" 
-                : `You reviewed ${reviews.length} word${reviews.length > 1 ? "s" : ""}.`}
+                : `You reviewed ${totalReviews} word${totalReviews > 1 ? "s" : ""}.`}
             </p>
             <div className="mt-6 flex gap-4 justify-center">
               <Button onClick={() => setMode(mode === "review" ? "new" : "review")} variant="outline">
@@ -192,12 +277,13 @@ export function ReviewSession() {
     );
   }
 
-  const progress = reviews.length > 0 ? ((currentIndex + 1) / reviews.length) * 100 : 0;
+  const currentPosition = reviewedBeforeBatch + currentIndex + 1;
+  const progress = totalReviews > 0 ? (currentPosition / totalReviews) * 100 : 0;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 mb-2">
-        <span>Card {currentIndex + 1} of {reviews.length}</span>
+        <span>Card {currentPosition} of {totalReviews}</span>
         <span>{Math.round(progress)}%</span>
         <span className="text-blue-600 dark:text-blue-400 font-medium">{mode === "review" ? "Review" : "New Words"}</span>
       </div>
@@ -224,7 +310,7 @@ export function ReviewSession() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              {mode === "review" ? "Review" : "New Word"} {currentIndex + 1} of {reviews.length}
+              {mode === "review" ? "Review" : "New Word"} {currentPosition} of {totalReviews}
             </span>
             {currentReview?.word?.phonetic && (
               <span className="text-gray-500 dark:text-gray-400 text-sm">
