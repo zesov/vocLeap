@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -20,8 +20,12 @@ interface TranslationResult {
   targetLanguage: string;
 }
 
-export function DictionaryLookup() {
-  const [word, setWord] = useState("");
+interface DictionaryLookupProps {
+  initialWord?: string;
+}
+
+export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
+  const [word, setWord] = useState(initialWord);
   const [sourceLang, setSourceLang] = useState("en");
   const [targetLang, setTargetLang] = useState("zh-CN");
   const [result, setResult] = useState<TranslationResult | null>(null);
@@ -42,35 +46,55 @@ export function DictionaryLookup() {
     { value: "ru", label: "Russian" },
   ];
 
-  const handleTranslate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!word.trim()) return;
-    
-    setLoading(true);
-    setError("");
-    setResult(null);
-    setSaveMessage("");
-    
-    try {
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ word: word.trim(), sourceLang, targetLang }),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || "Translation failed");
+  const lookupWord = useCallback(
+    async (term: string) => {
+      const query = term.trim();
+      if (!query) return;
+
+      setLoading(true);
+      setError("");
+      setResult(null);
+      setSaveMessage("");
+
+      try {
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ word: query, sourceLang, targetLang }),
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || "Translation failed");
+        }
+        
+        setResult(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Translation failed");
+      } finally {
+        setLoading(false);
       }
-      
-      setResult(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Translation failed");
-    } finally {
-      setLoading(false);
-    }
+    },
+    [sourceLang, targetLang]
+  );
+
+  const handleTranslate = (e: React.FormEvent) => {
+    e.preventDefault();
+    void lookupWord(word);
   };
+
+  const lastInitialWord = useRef("");
+  useEffect(() => {
+    const query = initialWord.trim();
+    if (!query || lastInitialWord.current === query) return;
+
+    lastInitialWord.current = query;
+    void Promise.resolve().then(() => {
+      setWord(query);
+      return lookupWord(query);
+    });
+  }, [initialWord, lookupWord]);
 
   const handleSave = async () => {
     if (!result) return;
