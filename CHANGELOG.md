@@ -89,3 +89,9 @@ All features work end-to-end: lookup word → save to SQLite → review via SRS 
 - Header is now sticky; nav horizontal padding matches page content (`px-4 sm:px-6`) so edges align on desktop
 - Added consistent content padding across `/`, `/dictionary`, `/review`, `/review-history`, and `/words`: `px-4 sm:px-6` with `py-6 sm:py-8` (home uses `py-8 sm:py-12`), so content no longer touches screen edges on mobile
 
+## [2026-11-03] Review Card Dictionary Shortcut
+- Added an info icon at the top-right of the reviewed word; tapping it opens `/dictionary?word=<word>` and runs the lookup automatically
+- `app/dictionary/page.tsx`: reads the `word` search param inside a `<Suspense>` boundary so the route keeps a static shell and no longer triggers Next 16's `blocking-prerender-runtime`
+- `components/DictionaryLookup.tsx`: accepts an `initialWord` prop, auto-looks it up once, and reuses a shared `lookupWord()` for form submissions
+- `components/ReviewSession.tsx`: icon is a 44px `Link` and does not trigger the mobile tap-to-toggle answer
+
