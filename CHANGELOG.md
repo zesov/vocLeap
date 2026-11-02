@@ -78,3 +78,8 @@ All features work end-to-end: lookup word → save to SQLite → review via SRS 
 - Refreshed `package-lock.json` (it was missing the `@libsql/*` tree) and `bun.lock` so installs are reproducible
 - `tsconfig.json`: limited implicit ambient types to `["node"]`, preventing the deprecated `@types/minimatch` stub from failing `tsc` with `TS2688`
 - `app/layout.tsx`: moved `themeColor` from `metadata` to the `viewport` export and dropped the duplicate manual `<meta name="theme-color">`; eliminates the per-route `Unsupported metadata themeColor` build warnings
+
+## [2026-11-03] Review Real-Time Feedback
+- "Due Now" stat on `/review` now decrements immediately after rating a card in review mode, instead of waiting for a refetch
+- Rating buttons now show the loading spinner only on the clicked Again/Hard/Good/Easy button; all four stay disabled during submission to prevent double submits
+
