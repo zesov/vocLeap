@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback, type MouseEvent } from "react";
 import NavBar from "@/components/NavBar";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
@@ -237,9 +238,33 @@ export function ReviewSession() {
           onClick={handleCardToggle}
         >
           <div className="text-center">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-              {currentReview?.word?.word || "Word"}
-            </h1>
+            <div className="relative inline-block px-12">
+              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+                {currentReview?.word?.word || "Word"}
+              </h1>
+              {currentReview?.word?.word && (
+                <Link
+                  href={`/dictionary?word=${encodeURIComponent(currentReview.word.word)}`}
+                  aria-label={`Look up ${currentReview.word.word} in the dictionary`}
+                  className="absolute right-0 top-0 inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-blue-400"
+                >
+                  <svg
+                    aria-hidden="true"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </Link>
+              )}
+            </div>
             {currentReview?.word?.audioUrl && (
               <audio controls src={currentReview?.word?.audioUrl} className="mb-4" />
             )}
