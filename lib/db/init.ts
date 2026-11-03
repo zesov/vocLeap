@@ -240,20 +240,30 @@ async function createSchema(): Promise<void> {
   `);
 
   await db.exec(`
-    CREATE TABLE IF NOT EXISTS review_sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+    CREATE TABLE IF NOT EXISTS user_review_state (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      device_id TEXT NOT NULL,
-      queue_type TEXT NOT NULL CHECK (queue_type IN ('due','new')),
-      queue_word_ids TEXT NOT NULL,
-      current_index INTEGER NOT NULL DEFAULT 0,
-      stats_json TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK (mode IN ('review','new')),
+      word_id INTEGER NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, device_id, queue_type)
+      PRIMARY KEY (user_id, mode, word_id)
     )
   `);
 
-  await db.exec(`CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions(user_id)`);
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS user_review_meta (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      mode TEXT NOT NULL CHECK (mode IN ('review','new')),
+      current_index INTEGER NOT NULL DEFAULT 0,
+      reviewed_count INTEGER NOT NULL DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, mode)
+    )
+  `);
+
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_user_review_state_user ON user_review_state(user_id)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_user_review_state_mode ON user_review_state(user_id, mode)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_user_review_meta_user ON user_review_meta(user_id)`);
 
   await db.exec(
     `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`

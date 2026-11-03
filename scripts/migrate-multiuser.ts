@@ -4,6 +4,8 @@ const REBUILD_STATEMENTS = [
   `DROP TABLE IF EXISTS review_history_migrated`,
   `DROP TABLE IF EXISTS reviews_migrated`,
   `DROP TABLE IF EXISTS words_migrated`,
+  `DROP TABLE IF EXISTS user_review_state_migrated`,
+  `DROP TABLE IF EXISTS user_review_meta_migrated`,
 
   `CREATE TABLE words_migrated (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,19 +72,28 @@ const REBUILD_STATEMENTS = [
           reviewed_at
    FROM review_history`,
 
-  `CREATE TABLE review_sessions_migrated (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+  `CREATE TABLE user_review_state_migrated (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_id TEXT NOT NULL,
-    queue_type TEXT NOT NULL CHECK (queue_type IN ('due','new')),
-    queue_word_ids TEXT NOT NULL,
-    current_index INTEGER NOT NULL DEFAULT 0,
-    stats_json TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('review','new')),
+    word_id INTEGER NOT NULL REFERENCES words_migrated(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, device_id, queue_type)
+    PRIMARY KEY (user_id, mode, word_id)
   )`,
 
-  `CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions_migrated(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_user_review_state_user ON user_review_state_migrated(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_user_review_state_mode ON user_review_state_migrated(user_id, mode)`,
+
+  `CREATE TABLE user_review_meta_migrated (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL CHECK (mode IN ('review','new')),
+    current_index INTEGER NOT NULL DEFAULT 0,
+    reviewed_count INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, mode)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_user_review_meta_user ON user_review_meta_migrated(user_id)`,
 
   `DROP TABLE review_history`,
   `DROP TABLE reviews`,
@@ -91,6 +102,7 @@ const REBUILD_STATEMENTS = [
   `ALTER TABLE words_migrated RENAME TO words`,
   `ALTER TABLE reviews_migrated RENAME TO reviews`,
   `ALTER TABLE review_history_migrated RENAME TO review_history`,
+  `ALTER TABLE user_review_meta_migrated RENAME TO user_review_meta`,
 
   `CREATE INDEX IF NOT EXISTS idx_words_word ON words(word)`,
   `CREATE INDEX IF NOT EXISTS idx_words_user ON words(user_id)`,
