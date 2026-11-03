@@ -1,5 +1,9 @@
 # Changelog
 
+All notable changes to risk-frontend are documented in this file.
+
+## Unreleased
+
 ## [2026-11-03] Multi-user Accounts
 - Added email + password accounts with server-side sessions (`users`, `sessions`); passwords use Node scrypt, session cookies are HttpOnly/SameSite=Lax and stored as SHA-256 hashes
 - Added `/login`, `/signup`, `/api/auth/{signup,login,logout,me}`; NavBar shows the signed-in email and a sign-out action
