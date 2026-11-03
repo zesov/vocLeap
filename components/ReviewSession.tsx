@@ -366,9 +366,13 @@ export function ReviewSession() {
       
       // Use 'all' action if we have synced positions to get all reviews (including reviewed ones)
       const action = hasSyncedPositions ? "all" : mode;
-      
+      const reviewsParams = new URLSearchParams({ action, limit: "50" });
+      if (hasSyncedPositions && mode === "new") {
+        reviewsParams.set("mode", "new");
+      }
+
       const [reviewsRes, statsRes] = await Promise.all([
-        fetch(`/api/reviews?action=${action}&limit=50`),
+        fetch(`/api/reviews?${reviewsParams}`),
         fetch("/api/reviews?action=stats"),
       ]);
 
@@ -542,10 +546,12 @@ export function ReviewSession() {
       }
 
       // Update stats
-      setStats((prev: any) => {
+      setStats((prev: Stats) => {
         const next = { ...prev };
         if (mode === "review") {
           next.due = Math.max(0, (next.due || 0) - 1);
+        } else {
+          next.newWords = Math.max(0, (next.newWords || 0) - 1);
         }
         return next;
       });
