@@ -164,11 +164,38 @@ if (DB_MODE === "turso") {
 
 export const db = adapter;
 
-export async function initDatabase() {
+let initPromise: Promise<void> | null = null;
+
+async function columnExists(table: string, column: string): Promise<boolean> {
+  const rows = await db.prepare(`PRAGMA table_info(${table})`).all();
+  return rows.some((row) => String(row.name) === column);
+}
+
+async function createSchema(): Promise<void> {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   await db.exec(`
     CREATE TABLE IF NOT EXISTS words (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      word TEXT NOT NULL UNIQUE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      word TEXT NOT NULL,
       translation TEXT NOT NULL,
       definitions TEXT,
       examples TEXT,
@@ -177,7 +204,8 @@ export async function initDatabase() {
       source_language TEXT DEFAULT 'en',
       target_language TEXT DEFAULT 'zh-CN',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, word)
     )
   `);
 
@@ -212,12 +240,39 @@ export async function initDatabase() {
   `);
 
   await db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_reviews_next_review ON reviews(next_review_date)`
+    `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`
   );
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_words_word ON words(word)`);
   await db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_reviews_next_review ON reviews(next_review_date)`
+  );
+  await db.exec(
     `CREATE INDEX IF NOT EXISTS idx_review_history_word ON review_history(word_id)`
   );
+
+  // A database that has not run `migrate:multiuser` yet still has the old
+  // `words` table without `user_id`. Skip the index instead of failing startup:
+  // the migration script creates it when it rebuilds the table.
+  if (await columnExists("words", "user_id")) {
+    await db.exec(`CREATE INDEX IF NOT EXISTS idx_words_user ON words(user_id)`);
+  }
 }
 
-initDatabase();
+/**
+ * Creates the schema once per process. Routes await this so a request can never
+ * query a table before it exists.
+ */
+export function initDatabase(): Promise<void> {
+  if (!initPromise) {
+    initPromise = createSchema().catch((error) => {
+      // Allow the next request to retry instead of caching the failure forever.
+      initPromise = null;
+      throw error;
+    });
+  }
+  return initPromise;
+}
+
+initDatabase().catch((error) => {
+  console.error("Database schema initialisation failed:", error);
+});

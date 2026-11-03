@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate:multiuser": "node scripts/migrate-multiuser.ts",
+    "claim-owner": "node scripts/claim-owner.ts"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.2.0",
