@@ -39,6 +39,23 @@ export interface ReviewHistory {
   reviewedAt?: string;
 }
 
+export interface ReviewSession {
+  id?: number;
+  userId: number;
+  deviceId: string;
+  queueType: "due" | "new";
+  queueWordIds: number[];
+  currentIndex: number;
+  stats: {
+    reviewed: number;
+    again: number;
+    hard: number;
+    good: number;
+    easy: number;
+  };
+  updatedAt?: string;
+}
+
 // Row shapes as they come back from the database (snake_case columns).
 interface ReviewRow {
   id: number;
@@ -63,6 +80,17 @@ interface ReviewHistoryRow {
   new_interval: number;
   new_repetitions: number;
   reviewed_at: string | null;
+}
+
+interface ReviewSessionRow {
+  id: number;
+  user_id: number;
+  device_id: string;
+  queue_type: "due" | "new";
+  queue_word_ids: string;
+  current_index: number;
+  stats_json: string;
+  updated_at: string | null;
 }
 
 interface WordColumns {
@@ -462,4 +490,49 @@ export async function getAllReviewHistory(
     word: r.word,
     translation: r.translation,
   }));
+}
+
+export async function getReviewSession(
+  userId: number,
+  deviceId: string,
+  queueType: "due" | "new"
+): Promise<ReviewSession | null> {
+  const stmt = db.prepare(`
+    SELECT * FROM review_sessions
+    WHERE user_id = ? AND device_id = ? AND queue_type = ?
+  `);
+  const row = toRow<ReviewSessionRow>(await stmt.get(userId, deviceId, queueType));
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    deviceId: row.device_id,
+    queueType: row.queue_type,
+    queueWordIds: JSON.parse(row.queue_word_ids),
+    currentIndex: row.current_index,
+    stats: JSON.parse(row.stats_json),
+    updatedAt: row.updated_at ?? undefined,
+  };
+}
+
+export async function upsertReviewSession(
+  session: Omit<ReviewSession, "id" | "updatedAt">
+): Promise<void> {
+  const stmt = db.prepare(`
+    INSERT INTO review_sessions (user_id, device_id, queue_type, queue_word_ids, current_index, stats_json)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, device_id, queue_type) DO UPDATE SET
+      queue_word_ids = excluded.queue_word_ids,
+      current_index = excluded.current_index,
+      stats_json = excluded.stats_json,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+  await stmt.run(
+    session.userId,
+    session.deviceId,
+    session.queueType,
+    JSON.stringify(session.queueWordIds),
+    session.currentIndex,
+    JSON.stringify(session.stats)
+  );
 }
