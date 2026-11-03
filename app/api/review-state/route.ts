@@ -8,36 +8,53 @@ import {
 } from "@/lib/db/operations";
 import { withUser } from "@/lib/auth/guard";
 
-function getDeviceId(request: NextRequest): string {
-  // Get deviceId from header, fallback to a cookie, or generate a session-based one
-  const headerDeviceId = request.headers.get("x-device-id");
-  if (headerDeviceId) return headerDeviceId;
-  
-  const cookieDeviceId = request.cookies.get("device_id")?.value;
-  if (cookieDeviceId) return cookieDeviceId;
-  
-  // Fallback: use user agent + IP hash or a random ID for this session
-  // In production, you'd want a proper device fingerprint
-  const ua = request.headers.get("user-agent") || "unknown";
-  return `device_${Buffer.from(ua).toString("base64").slice(0, 16)}`;
-}
-
 export async function GET(request: NextRequest) {
   return withUser(async (user) => {
     try {
       const { searchParams } = new URL(request.url);
       const mode = searchParams.get("mode");
-      const deviceId = getDeviceId(request);
+      const deviceId = searchParams.get("deviceId");
+      const allDevices = searchParams.get("allDevices") === "true";
 
       if (!mode || !["review", "new"].includes(mode)) {
         return NextResponse.json({ error: "mode must be 'review' or 'new'" }, { status: 400 });
       }
+      if (!deviceId && !allDevices) {
+        return NextResponse.json({ error: "deviceId required" }, { status: 400 });
+      }
+
+      if (allDevices) {
+        // Return merged state across all devices (for testing/debugging)
+        // Need to use db directly since we don't have a multi-device query function
+        const db = (await import("@/lib/db/init")).db;
+        const stmt = db.prepare(`
+          SELECT * FROM user_review_state
+          WHERE user_id = ? AND mode = ?
+          ORDER BY updated_at DESC
+        `);
+        interface UserReviewStateRow {
+          user_id: number;
+          device_id: string;
+          mode: "review" | "new";
+          word_id: number;
+          position: number;
+          updated_at: string;
+        }
+        const rows = (await stmt.all(user.id, mode as "review" | "new")) as unknown as UserReviewStateRow[];
+        const states = rows.map((r) => ({
+          wordId: r.word_id,
+          position: r.position,
+          deviceId: r.device_id,
+          updatedAt: r.updated_at,
+        }));
+        return NextResponse.json({ mode, states, meta: null });
+      }
 
       const [states, meta] = await Promise.all([
-        getUserReviewState(user.id, deviceId, mode as "review" | "new"),
-        getUserReviewMeta(user.id, deviceId, mode as "review" | "new"),
+        getUserReviewState(user.id, deviceId!, mode as "review" | "new"),
+        getUserReviewMeta(user.id, deviceId!, mode as "review" | "new"),
       ]);
-      
+
       return NextResponse.json({
         mode,
         deviceId,
@@ -63,10 +80,12 @@ export async function POST(request: NextRequest) {
   return withUser(async (user) => {
     try {
       const body = await request.json();
-      const deviceId = getDeviceId(request);
 
-      const { mode, states, meta } = body;
+      const { deviceId, mode, states, meta } = body;
 
+      if (!deviceId) {
+        return NextResponse.json({ error: "deviceId required" }, { status: 400 });
+      }
       if (!mode || !["review", "new"].includes(mode)) {
         return NextResponse.json({ error: "mode must be 'review' or 'new'" }, { status: 400 });
       }
@@ -107,10 +126,13 @@ export async function DELETE(request: NextRequest) {
     try {
       const { searchParams } = new URL(request.url);
       const mode = searchParams.get("mode");
-      const deviceId = getDeviceId(request);
+      const deviceId = searchParams.get("deviceId");
 
       if (!mode || !["review", "new"].includes(mode)) {
         return NextResponse.json({ error: "mode must be 'review' or 'new'" }, { status: 400 });
+      }
+      if (!deviceId) {
+        return NextResponse.json({ error: "deviceId required" }, { status: 400 });
       }
 
       await clearUserReviewState(user.id, deviceId, mode as "review" | "new");
