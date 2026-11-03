@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { createHash, randomBytes } from "crypto";
 import { db, initDatabase } from "@/lib/db/init";
 
@@ -35,6 +36,11 @@ export async function createSession(userId: number): Promise<void> {
 }
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
+  // Reading the session compares an expiry against the current time, so this can
+  // never be prerendered. Stop prerendering here rather than letting `Date.now()`
+  // be evaluated while building the static shell.
+  await connection();
+
   await initDatabase();
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
