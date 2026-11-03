@@ -4,6 +4,13 @@ All notable changes to risk-frontend are documented in this file.
 
 ## Unreleased
 
+## [2026-11-03] Sign-in Redirect
+- Signed-out visits to `/review`, `/review-history`, or `/words` now redirect to `/login?next=<path+query>`, and signing in returns to the requested page
+- Added `proxy.ts` as an optimistic auth gate; the protected layout still validates the session server-side
+- `/signup` now honours `next`, and the login/signup switch links preserve the destination
+- Centralised `safeNext()` validation (rejects protocol-relative and backslash paths) and the `SESSION_COOKIE` constant
+- Added E2E coverage for redirecting back after sign-in
+
 ## [2026-11-03] New Words Queue Fix
 - Saving or importing a word no longer creates a placeholder `reviews` row, so `GET /api/reviews?action=stats` reports `newWords` correctly and never-reviewed words are no longer counted as due
 - `GET /api/reviews?action=all&mode=new` now includes never-reviewed words so the new-word queue can be restored across devices
