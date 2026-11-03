@@ -4,6 +4,14 @@ All notable changes to risk-frontend are documented in this file.
 
 ## Unreleased
 
+## [2026-11-03] New Words Queue Fix
+- Saving or importing a word no longer creates a placeholder `reviews` row, so `GET /api/reviews?action=stats` reports `newWords` correctly and never-reviewed words are no longer counted as due
+- `GET /api/reviews?action=all&mode=new` now includes never-reviewed words so the new-word queue can be restored across devices
+- `stats.total` now counts saved words instead of review rows
+- Review page decrements `newWords` immediately after rating a card in New Words mode
+- Added `bun run reset:unreviewed` to delete placeholder review rows (`last_reviewed IS NULL`, no history) left by earlier versions; run once on existing databases
+- Updated cross-device sync E2E tests for the new-word queue semantics
+
 ## [2026-11-03] Multi-user Accounts
 - Added email + password accounts with server-side sessions (`users`, `sessions`); passwords use Node scrypt, session cookies are HttpOnly/SameSite=Lax and stored as SHA-256 hashes
 - Added `/login`, `/signup`, `/api/auth/{signup,login,logout,me}`; NavBar shows the signed-in email and a sign-out action
