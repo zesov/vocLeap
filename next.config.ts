@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
+  // `next dev` takes an exclusive lock at `<distDir>/lock`, so two dev servers
+  // cannot share a build directory. Pointing the Playwright webServer at its own
+  // distDir lets it run next to the developer's dev server instead of replacing it.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

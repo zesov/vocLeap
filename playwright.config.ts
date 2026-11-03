@@ -42,6 +42,9 @@ export default defineConfig({
       DB_MODE: "local",
       DB_PATH: TEST_DB,
       OWNER_EMAIL: "owner@test.local",
+      // Own build directory, so this server can run alongside `bun run dev`
+      // (Next.js locks a dev server to its distDir).
+      NEXT_DIST_DIR: ".next-test",
     },
   },
 });
