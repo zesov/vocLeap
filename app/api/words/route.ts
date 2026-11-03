@@ -7,7 +7,6 @@ import {
   updateWord,
   deleteWord,
   Word,
-  createOrUpdateReview,
 } from "@/lib/db/operations";
 import { withUser } from "@/lib/auth/guard";
 
@@ -96,14 +95,6 @@ export async function POST(request: NextRequest) {
               throw new Error("Created word could not be loaded");
             }
 
-            await createOrUpdateReview({
-              wordId: id,
-              easeFactor: 2.5,
-              interval: 0,
-              repetitions: 0,
-              nextReviewDate: new Date().toISOString().split("T")[0],
-            });
-
             results.push({ word, success: true, id: newWord.id });
           } catch (err) {
             results.push({ word, success: false, error: err instanceof Error ? err.message : "Failed to create word" });
@@ -155,14 +146,6 @@ export async function POST(request: NextRequest) {
 
       const id = await createWord(user.id, wordData);
       const newWord = await getWordById(user.id, id);
-
-      await createOrUpdateReview({
-        wordId: id,
-        easeFactor: 2.5,
-        interval: 0,
-        repetitions: 0,
-        nextReviewDate: new Date().toISOString().split("T")[0],
-      });
 
       return NextResponse.json(newWord, { status: 201 });
     } catch (error) {

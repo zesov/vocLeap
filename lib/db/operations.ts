@@ -370,8 +370,7 @@ export async function getReviewStats(userId: number): Promise<{
   `);
   const totalStmt = db.prepare(`
     SELECT COUNT(*) as count
-    FROM reviews r
-    JOIN words w ON w.id = r.word_id
+    FROM words w
     WHERE w.user_id = ?
   `);
   const newStmt = db.prepare(`
