@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getDueReviews, getReview, createOrUpdateReview, addReviewHistory,
+  getDueReviews, getAllReviewsForUser, getReview, createOrUpdateReview, addReviewHistory,
   getReviewStats, getReviewHistory, getAllReviewHistory, Review, getNewWords,
   assertWordOwned,
 } from "@/lib/db/operations";
@@ -19,6 +19,14 @@ export async function GET(request: NextRequest) {
           await getDueReviews(
             user.id,
             parseInt(searchParams.get("limit") || "20", 10)
+          )
+        );
+      }
+      if (action === "all") {
+        return NextResponse.json(
+          await getAllReviewsForUser(
+            user.id,
+            parseInt(searchParams.get("limit") || "500", 10)
           )
         );
       }

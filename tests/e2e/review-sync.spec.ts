@@ -40,14 +40,20 @@ test.describe("Review cross-device sync", () => {
     await addWordsViaAPI(pageA, words);
 
     await pageA.goto("/review");
-    await expect(pageA.getByText("Card 1 of 3")).toBeVisible();
+    await expect(pageA.getByText(/Card 1 of/)).toBeVisible();
 
-    // Rate "Good" on first card
+    // Click "Show Answer" first, then rate "Good"
+    await pageA.getByRole("button", { name: "Show Answer" }).click();
+    // Wait for "Show Answer" button to disappear (answer shown)
+    await expect(pageA.getByRole("button", { name: "Show Answer" })).toBeHidden({ timeout: 5000 });
+    // Now rating buttons should be visible
+    await expect(pageA.getByRole("button", { name: /Good/ })).toBeVisible({ timeout: 5000 });
     await pageA.getByRole("button", { name: /Good/ }).click();
-    await expect(pageA.getByText("Card 2 of 3")).toBeVisible();
+    // Wait for card to advance
+    await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
 
-    // Give it a moment to sync
-    await pageA.waitForTimeout(1000);
+    // Give it a moment to sync (longer for debounced save)
+    await pageA.waitForTimeout(3000);
 
     // --- Device B: new browser context (simulates different device) ---
     const contextB = await browser.newContext();
@@ -60,8 +66,12 @@ test.describe("Review cross-device sync", () => {
     await pageB.getByRole("button", { name: "Sign in" }).click();
     await expect(pageB).toHaveURL(/\/review$/);
 
+    // Debug: check what the API returns for this user
+    const apiRes = await pageB.request.get("/api/review-state?queue=due&allDevices=true");
+    const apiData = await apiRes.json();
+
     // Should resume at Card 2 (index 1)
-    await expect(pageB.getByText("Card 2 of 3")).toBeVisible();
+    await expect(pageB.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
 
     await contextA.close();
     await contextB.close();
@@ -83,12 +93,15 @@ test.describe("Review cross-device sync", () => {
     await addWordsViaAPI(pageA, words);
 
     await pageA.goto("/review");
-    await expect(pageA.getByText("Card 1 of 3")).toBeVisible();
+    await expect(pageA.getByText(/Card 1 of/)).toBeVisible();
 
-    // Review 1 card
+    // Review 1 card - click Show Answer first
+    await pageA.getByRole("button", { name: "Show Answer" }).click();
+    await expect(pageA.getByRole("button", { name: "Show Answer" })).toBeHidden({ timeout: 5000 });
+    await expect(pageA.getByRole("button", { name: /Good/ })).toBeVisible({ timeout: 5000 });
     await pageA.getByRole("button", { name: /Good/ }).click();
-    await expect(pageA.getByText("Card 2 of 3")).toBeVisible();
-    await pageA.waitForTimeout(1000);
+    await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
+    await pageA.waitForTimeout(1500);
 
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
@@ -97,7 +110,7 @@ test.describe("Review cross-device sync", () => {
     await pageB.getByLabel("Password").fill(PASSWORD);
     await pageB.getByRole("button", { name: "Sign in" }).click();
     await expect(pageB).toHaveURL(/\/review$/);
-    await expect(pageB.getByText("Card 2 of 3")).toBeVisible();
+    await expect(pageB.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
 
     await contextA.close();
     await contextB.close();

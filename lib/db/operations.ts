@@ -348,6 +348,43 @@ export async function getDueReviews(
   }));
 }
 
+export async function getAllReviewsForUser(
+  userId: number,
+  limit: number = 200
+): Promise<(Review & { word: Word })[]> {
+  const stmt = db.prepare(`
+    SELECT r.*, w.word, w.translation, w.definitions, w.examples, w.phonetic, w.audio_url, w.source_language, w.target_language
+    FROM reviews r
+    JOIN words w ON r.word_id = w.id
+    WHERE w.user_id = ?
+    ORDER BY r.next_review_date ASC
+    LIMIT ?
+  `);
+  const rows = toRows<ReviewWithWordRow>(await stmt.all(userId, limit));
+  return rows.map((r) => ({
+    id: r.id,
+    wordId: r.word_id,
+    easeFactor: r.ease_factor,
+    interval: r.interval,
+    repetitions: r.repetitions,
+    nextReviewDate: r.next_review_date,
+    lastReviewed: r.last_reviewed ?? undefined,
+    createdAt: r.created_at ?? undefined,
+    updatedAt: r.updated_at ?? undefined,
+    word: {
+      id: r.word_id,
+      word: r.word,
+      translation: r.translation,
+      definitions: JSON.parse(String(r.definitions || "[]")),
+      examples: JSON.parse(String(r.examples || "[]")),
+      phonetic: r.phonetic ?? undefined,
+      audioUrl: r.audio_url ?? undefined,
+      sourceLanguage: r.source_language,
+      targetLanguage: r.target_language,
+    },
+  }));
+}
+
 export async function getNewWords(
   userId: number,
   limit: number = 20
@@ -515,6 +552,30 @@ export async function getReviewSession(
   };
 }
 
+export async function getLatestReviewSession(
+  userId: number,
+  queueType: "due" | "new"
+): Promise<ReviewSession | null> {
+  const stmt = db.prepare(`
+    SELECT * FROM review_sessions
+    WHERE user_id = ? AND queue_type = ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `);
+  const row = toRow<ReviewSessionRow>(await stmt.get(userId, queueType));
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    deviceId: row.device_id,
+    queueType: row.queue_type,
+    queueWordIds: JSON.parse(row.queue_word_ids),
+    currentIndex: row.current_index,
+    stats: JSON.parse(row.stats_json),
+    updatedAt: row.updated_at ?? undefined,
+  };
+}
+
 export async function upsertReviewSession(
   session: Omit<ReviewSession, "id" | "updatedAt">
 ): Promise<void> {
@@ -535,4 +596,109 @@ export async function upsertReviewSession(
     session.currentIndex,
     JSON.stringify(session.stats)
   );
+}
+
+// New per-word position tracking for cross-device sync
+export interface UserReviewState {
+  userId: number;
+  mode: "review" | "new";
+  wordId: number;
+  position: number;
+  updatedAt: string;
+}
+
+interface UserReviewStateRow {
+  user_id: number;
+  mode: "review" | "new";
+  word_id: number;
+  position: number;
+  updated_at: string;
+}
+
+export async function getUserReviewState(
+  userId: number,
+  mode: "review" | "new"
+): Promise<UserReviewState[]> {
+  const stmt = db.prepare(`
+    SELECT * FROM user_review_state
+    WHERE user_id = ? AND mode = ?
+    ORDER BY position ASC
+  `);
+  const rows = toRows<UserReviewStateRow>(await stmt.all(userId, mode));
+  return rows.map((r) => ({
+    userId: r.user_id,
+    mode: r.mode,
+    wordId: r.word_id,
+    position: r.position,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function upsertUserReviewState(
+  state: UserReviewState
+): Promise<void> {
+  const stmt = db.prepare(`
+    INSERT INTO user_review_state (user_id, mode, word_id, position, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, mode, word_id) DO UPDATE SET
+      position = excluded.position,
+      updated_at = excluded.updated_at
+  `);
+  await stmt.run(state.userId, state.mode, state.wordId, state.position, state.updatedAt);
+}
+
+export async function upsertUserReviewStates(
+  states: UserReviewState[]
+): Promise<void> {
+  if (states.length === 0) return;
+  const stmt = db.prepare(`
+    INSERT INTO user_review_state (user_id, mode, word_id, position, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, mode, word_id) DO UPDATE SET
+      position = excluded.position,
+      updated_at = excluded.updated_at
+  `);
+  for (const state of states) {
+    await stmt.run(state.userId, state.mode, state.wordId, state.position, state.updatedAt);
+  }
+}
+
+export async function clearUserReviewState(
+  userId: number,
+  mode: "review" | "new"
+): Promise<void> {
+  const stmt = db.prepare(`
+    DELETE FROM user_review_state WHERE user_id = ? AND mode = ?
+  `);
+  await stmt.run(userId, mode);
+}
+
+export async function getUserReviewMeta(
+  userId: number,
+  mode: "review" | "new"
+): Promise<{ currentIndex: number; reviewedCount: number; updatedAt: string } | null> {
+  const stmt = db.prepare(`
+    SELECT current_index, reviewed_count, updated_at FROM user_review_meta
+    WHERE user_id = ? AND mode = ?
+  `);
+  const row = toRow<{ current_index: number; reviewed_count: number; updated_at: string }>(await stmt.get(userId, mode));
+  if (!row) return null;
+  return { currentIndex: row.current_index, reviewedCount: row.reviewed_count, updatedAt: row.updated_at };
+}
+
+export async function upsertUserReviewMeta(
+  userId: number,
+  mode: "review" | "new",
+  currentIndex: number,
+  reviewedCount: number
+): Promise<void> {
+  const stmt = db.prepare(`
+    INSERT INTO user_review_meta (user_id, mode, current_index, reviewed_count, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, mode) DO UPDATE SET
+      current_index = excluded.current_index,
+      reviewed_count = excluded.reviewed_count,
+      updated_at = excluded.updated_at
+  `);
+  await stmt.run(userId, mode, currentIndex, reviewedCount, new Date().toISOString());
 }

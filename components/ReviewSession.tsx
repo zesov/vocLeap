@@ -2,13 +2,11 @@
 
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
-import NavBar from "@/components/NavBar";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 
 type Rating = "again" | "hard" | "good" | "easy";
 type Mode = "review" | "new";
-type QueueType = "due" | "new";
 
 const RATING_CONFIG: Record<Rating, { label: string; color: string; description: string }> = {
   again: { label: "Again", color: "bg-red-600 hover:bg-red-700", description: "Complete blackout" },
@@ -16,17 +14,6 @@ const RATING_CONFIG: Record<Rating, { label: string; color: string; description:
   good: { label: "Good", color: "bg-blue-600 hover:bg-blue-700", description: "Normal recall" },
   easy: { label: "Easy", color: "bg-green-600 hover:bg-green-700", description: "Instant recall" },
 };
-
-// Device ID persistence
-function getOrCreateDeviceId(): string {
-  if (typeof window === "undefined") return "";
-  let deviceId = localStorage.getItem("vocleap_device_id");
-  if (!deviceId) {
-    deviceId = crypto.randomUUID();
-    localStorage.setItem("vocleap_device_id", deviceId);
-  }
-  return deviceId;
-}
 
 // Legacy position-based storage (for backward compatibility)
 type SavedPosition = { wordId: number; position: number };
@@ -82,49 +69,51 @@ function clearSavedPosition(mode: Mode) {
   }
 }
 
-// New queue-based storage with sync support
-const QUEUE_STORAGE_KEY = (queueType: QueueType) => `review_${queueType}_state`;
+// New per-word position storage for cross-device sync
+const POSITIONS_STORAGE_KEY = (mode: Mode) => `review_${mode}_positions`;
 
-interface QueueState {
-  queueWordIds: number[];
-  currentIndex: number;
-  stats: { reviewed: number; again: number; hard: number; good: number; easy: number };
+interface PositionState {
+  positions: Record<number, number>; // wordId -> position in queue
+  currentIndex: number; // current index in the remaining queue
+  reviewedCount: number; // number of words reviewed in this session
   updatedAt: string;
 }
 
-function readQueueState(queueType: QueueType): QueueState | null {
+function readPositionState(mode: Mode): PositionState | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(QUEUE_STORAGE_KEY(queueType));
+    const raw = localStorage.getItem(POSITIONS_STORAGE_KEY(mode));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed.queueWordIds || !Array.isArray(parsed.queueWordIds)) return null;
-    return parsed as QueueState;
+    if (!parsed.positions || typeof parsed.positions !== "object") return null;
+    // Backward compat: add missing fields
+    return {
+      positions: parsed.positions,
+      currentIndex: parsed.currentIndex ?? 0,
+      reviewedCount: parsed.reviewedCount ?? 0,
+      updatedAt: parsed.updatedAt ?? new Date().toISOString(),
+    } as PositionState;
   } catch {
     return null;
   }
 }
 
-function writeQueueState(queueType: QueueType, state: QueueState) {
+function writePositionState(mode: Mode, state: PositionState) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(QUEUE_STORAGE_KEY(queueType), JSON.stringify(state));
+    localStorage.setItem(POSITIONS_STORAGE_KEY(mode), JSON.stringify(state));
   } catch {
     return;
   }
 }
 
-function clearQueueState(queueType: QueueType) {
+function clearPositionState(mode: Mode) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(QUEUE_STORAGE_KEY(queueType));
+    localStorage.removeItem(POSITIONS_STORAGE_KEY(mode));
   } catch {
     return;
   }
-}
-
-function modeToQueueType(mode: Mode): QueueType {
-  return mode === "review" ? "due" : "new";
 }
 
 export function ReviewSession() {
@@ -140,102 +129,167 @@ export function ReviewSession() {
   const [pendingRating, setPendingRating] = useState<Rating | null>(null);
 
   // Sync state
-  const [deviceId] = useState(() => getOrCreateDeviceId());
   const [synced, setSynced] = useState(false);
-  const syncQueueRef = useRef<Record<QueueType, NodeJS.Timeout>>({ due: null, new: null } as any);
+  const syncPositionsRef = useRef<Record<Mode, NodeJS.Timeout>>({ review: null, new: null } as any);
 
   const totalReviews = reviewedBeforeBatch + reviews.length;
-  const currentQueueType = modeToQueueType(mode);
 
-  // Initialize queue from localStorage (merged with server data)
-  function initializeQueueFromStorage() {
-    const queueType = modeToQueueType(mode);
-    const saved = readQueueState(queueType);
-    if (saved && saved.queueWordIds && saved.queueWordIds.length > 0) {
-      setQueue(saved.queueWordIds);
-      setCurrentIndex(saved.currentIndex || 0);
-      setStats(saved.stats || { reviewed: 0, again: 0, hard: 0, good: 0, easy: 0 });
-      setReviewedBeforeBatch(saved.stats?.reviewed || 0);
-      return true;
+  // Initialize queue order from saved positions (localStorage or server-synced)
+  function initializeQueueFromPositions(reviewsData: any[]) {
+    const saved = readPositionState(mode);
+    console.log("[initQueue] mode:", mode, "saved:", saved, "reviewsData:", reviewsData.map(r => ({id: r.wordId, word: r.word?.word})));
+    if (!saved || !saved.positions || Object.keys(saved.positions).length === 0) {
+      return false;
     }
-    return false;
+
+    // Build ordered word IDs from positions (sort by position)
+    const wordIdsWithPositions = Object.entries(saved.positions)
+      .map(([wordId, position]) => ({ wordId: Number(wordId), position }))
+      .sort((a, b) => a.position - b.position)
+      .map(w => w.wordId);
+
+    if (wordIdsWithPositions.length === 0) return false;
+
+    // Reorder reviews to match saved positions
+    const reviewMap = new Map(reviewsData.map((r) => [r.wordId, r]));
+    const orderedReviews = wordIdsWithPositions
+      .map((id) => reviewMap.get(id))
+      .filter((r): r is any => r !== undefined);
+    const missingReviews = reviewsData.filter(
+      (r) => !wordIdsWithPositions.includes(r.wordId)
+    );
+    const newReviews = [...orderedReviews, ...missingReviews];
+
+    // Use saved session progress (currentIndex and reviewedCount)
+    const currentIndex = saved.currentIndex ?? 0;
+    const reviewedCount = saved.reviewedCount ?? 0;
+
+    setReviews(newReviews);
+    setCurrentIndex(currentIndex);
+    setReviewedBeforeBatch(reviewedCount);
+
+    return true;
   }
 
-  // Set queue from word IDs (fetch full review objects if needed)
-  function setQueue(wordIds: number[]) {
-    // We have the word IDs, but need full review objects for display.
-    // The reviews are already fetched in fetchReviews. This function just updates the index/stats.
-    // The actual reviews array comes from the API fetch.
-  }
+  // Debounced save positions to server
+  const savePositionsToServer = useCallback(
+    (mode: Mode, positions: Record<number, number>) => {
+      if (!synced) return;
 
-  // Debounced save to server
-  const saveToServer = useCallback(
-    (queueType: QueueType, state: { queueWordIds: number[]; currentIndex: number; stats: any }) => {
-      if (!deviceId || !synced) return;
-
-      const existing = syncQueueRef.current[queueType];
+      const existing = syncPositionsRef.current[mode];
       if (existing) clearTimeout(existing);
 
       const timeout = setTimeout(async () => {
         try {
+          const states = Object.entries(positions).map(([wordId, position]) => ({
+            wordId: Number(wordId),
+            position,
+            updatedAt: new Date().toISOString(),
+          }));
+
+          // Get current meta to send with positions
+          const local = readPositionState(mode);
+          const meta = local ? {
+            currentIndex: local.currentIndex ?? 0,
+            reviewedCount: local.reviewedCount ?? 0,
+          } : null;
+
           await fetch("/api/review-state", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              deviceId,
-              queueType,
-              queueWordIds: state.queueWordIds,
-              currentIndex: state.currentIndex,
-              stats: state.stats,
-            }),
+            body: JSON.stringify({ mode, states, meta }),
           });
+
           // Update local updatedAt on success
-          const local = readQueueState(queueType);
           if (local) {
             local.updatedAt = new Date().toISOString();
-            writeQueueState(queueType, local);
+            writePositionState(mode, local);
           }
         } catch (e) {
           console.error("Sync save failed:", e);
         }
       }, 500);
 
-      syncQueueRef.current[queueType] = timeout;
+      syncPositionsRef.current[mode] = timeout;
     },
-    [deviceId, synced]
+    [synced]
   );
 
-  // Load from server on mount
+  // Load from server on mount (fetch per-word positions for cross-device sync)
   useEffect(() => {
-    if (!deviceId) return;
     let cancelled = false;
 
     async function load() {
       try {
-        const [dueRes, newRes] = await Promise.all([
-          fetch(`/api/review-state?queue=due&deviceId=${deviceId}`),
-          fetch(`/api/review-state?queue=new&deviceId=${deviceId}`),
+        const [reviewRes, newRes] = await Promise.all([
+          fetch("/api/review-state?mode=review"),
+          fetch("/api/review-state?mode=new"),
         ]);
 
         if (cancelled) return;
 
-        if (dueRes.ok) {
-          const dueData = await dueRes.json();
-          const localDue = readQueueState("due");
-          if (!localDue || (dueData.updatedAt && dueData.updatedAt > localDue.updatedAt)) {
-            writeQueueState("due", dueData);
+        if (reviewRes.ok) {
+          const reviewData = await reviewRes.json();
+          const localReview = readPositionState("review");
+          const hasServerData = reviewData.states && reviewData.states.length > 0 && reviewData.states[0].updatedAt;
+          if (!localReview || (hasServerData && (!localReview.updatedAt || reviewData.states[0].updatedAt > localReview.updatedAt))) {
+            // Merge server positions into local (take latest per word)
+            const mergedPositions = { ...localReview?.positions || {} };
+            for (const s of reviewData.states) {
+              if (!mergedPositions[s.wordId] || (s.updatedAt && (!localReview?.updatedAt || s.updatedAt > localReview.updatedAt))) {
+                mergedPositions[s.wordId] = s.position;
+              }
+            }
+            // Also restore meta (currentIndex, reviewedCount)
+            const meta = reviewData.meta;
+            writePositionState("review", { 
+              positions: mergedPositions, 
+              currentIndex: meta?.currentIndex ?? 0,
+              reviewedCount: meta?.reviewedCount ?? 0,
+              updatedAt: reviewData.states[0]?.updatedAt || new Date().toISOString() 
+            });
+          } else if (reviewData.meta && localReview) {
+            // Server has newer meta even if positions are same
+            if (!localReview.updatedAt || reviewData.meta.updatedAt > localReview.updatedAt) {
+              writePositionState("review", { 
+                ...localReview,
+                currentIndex: reviewData.meta.currentIndex,
+                reviewedCount: reviewData.meta.reviewedCount,
+                updatedAt: reviewData.meta.updatedAt,
+              });
+            }
           }
         }
         if (newRes.ok) {
           const newData = await newRes.json();
-          const localNew = readQueueState("new");
-          if (!localNew || (newData.updatedAt && newData.updatedAt > localNew.updatedAt)) {
-            writeQueueState("new", newData);
+          const localNew = readPositionState("new");
+          const hasServerData = newData.states && newData.states.length > 0 && newData.states[0].updatedAt;
+          if (!localNew || (hasServerData && (!localNew.updatedAt || newData.states[0].updatedAt > localNew.updatedAt))) {
+            const mergedPositions = { ...localNew?.positions || {} };
+            for (const s of newData.states) {
+              if (!mergedPositions[s.wordId] || (s.updatedAt && (!localNew?.updatedAt || s.updatedAt > localNew.updatedAt))) {
+                mergedPositions[s.wordId] = s.position;
+              }
+            }
+            const meta = newData.meta;
+            writePositionState("new", { 
+              positions: mergedPositions, 
+              currentIndex: meta?.currentIndex ?? 0,
+              reviewedCount: meta?.reviewedCount ?? 0,
+              updatedAt: newData.states[0]?.updatedAt || new Date().toISOString() 
+            });
+          } else if (newData.meta && localNew) {
+            if (!localNew.updatedAt || newData.meta.updatedAt > localNew.updatedAt) {
+              writePositionState("new", { 
+                ...localNew,
+                currentIndex: newData.meta.currentIndex,
+                reviewedCount: newData.meta.reviewedCount,
+                updatedAt: newData.meta.updatedAt,
+              });
+            }
           }
         }
 
-        // Re-initialize queue from merged state
-        initializeQueueFromStorage();
         setSynced(true);
       } catch (e) {
         console.error("Sync load failed:", e);
@@ -245,18 +299,37 @@ export function ReviewSession() {
 
     load();
     return () => { cancelled = true; };
-  }, [deviceId]);
+  }, []);
 
   const fetchReviews = async () => {
     setLoading(true);
     try {
+      // Check if we have synced positions for this mode
+      const savedPositions = readPositionState(mode);
+      const hasSyncedPositions = savedPositions && savedPositions.positions && Object.keys(savedPositions.positions).length > 0;
+      
+      // Use 'all' action if we have synced positions to get all reviews (including reviewed ones)
+      const action = hasSyncedPositions ? "all" : mode;
+      
       const [reviewsRes, statsRes] = await Promise.all([
-        fetch(`/api/reviews?action=${mode}&limit=50`),
+        fetch(`/api/reviews?action=${action}&limit=50`),
         fetch("/api/reviews?action=stats"),
       ]);
 
+      if (!reviewsRes.ok || !statsRes.ok) {
+        console.error("Failed to fetch reviews:", reviewsRes.status, statsRes.status);
+        setLoading(false);
+        return;
+      }
+
       const reviewsData = await reviewsRes.json();
       const statsData = await statsRes.json();
+
+      if (!Array.isArray(reviewsData)) {
+        console.error("Invalid reviews data:", reviewsData);
+        setLoading(false);
+        return;
+      }
 
       // Auto-switch to new words mode if no due reviews but there are new words
       if (mode === "review" && statsData.due === 0 && statsData.newWords > 0) {
@@ -264,14 +337,26 @@ export function ReviewSession() {
         return;
       }
 
-      setReviews(reviewsData);
-      setStats(statsData);
-
-      // Try to restore from queue state first (server-synced)
-      const restored = initializeQueueFromStorage();
+      // Try to restore from saved positions first (server-synced)
+      const restored = initializeQueueFromPositions(reviewsData);
 
       if (!restored) {
-        // Fallback to legacy position-based restore
+        // No synced state - use API order and try legacy restore
+        setReviews(reviewsData);
+        setStats(statsData);
+
+        // Initialize positions from API order for future sync
+        const initialPositions: Record<number, number> = {};
+        reviewsData.forEach((r: any, idx: number) => {
+          initialPositions[r.wordId] = idx;
+        });
+        writePositionState(mode, { 
+          positions: initialPositions, 
+          currentIndex: 0, 
+          reviewedCount: 0,
+          updatedAt: new Date().toISOString() 
+        });
+
         const saved = readSavedPosition(mode);
         const savedIndex = saved
           ? reviewsData.findIndex((review: { wordId: number }) => review.wordId === saved.wordId)
@@ -281,6 +366,9 @@ export function ReviewSession() {
 
         setCurrentIndex(saved && savedIndex >= 0 ? savedIndex : 0);
         setReviewedBeforeBatch(restoredOffset);
+      } else {
+        // Use API stats for display (due/total/newWords)
+        setStats(statsData);
       }
 
       setShowAnswer(false);
@@ -289,7 +377,7 @@ export function ReviewSession() {
 
       if (reviewsData.length === 0) {
         clearSavedPosition(mode);
-        clearQueueState(currentQueueType);
+        clearPositionState(mode);
       }
     } catch (error) {
       console.error("Failed to fetch reviews:", error);
@@ -299,8 +387,27 @@ export function ReviewSession() {
   };
 
   useEffect(() => {
-    fetchReviews();
-  }, [mode]);
+    let cancelled = false;
+    async function run() {
+      if (!synced) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, 2000);
+          const checkSync = () => {
+            if (synced || cancelled) {
+              clearTimeout(timeout);
+              resolve();
+            } else {
+              setTimeout(checkSync, 50);
+            }
+          };
+          checkSync();
+        });
+      }
+      if (!cancelled) fetchReviews();
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [mode, synced]);
 
   // Save position to legacy localStorage (for backward compat)
   useEffect(() => {
@@ -315,31 +422,37 @@ export function ReviewSession() {
     });
   }, [loading, sessionComplete, loadedMode, mode, reviews, currentIndex, reviewedBeforeBatch]);
 
-  // Save queue state to localStorage (with updatedAt) and sync to server
-  const saveQueueState = useCallback(() => {
-    const queueType = modeToQueueType(mode);
-    const queueWordIds = reviews.map((r: any) => r.wordId);
-    const newStats = {
-      reviewed: reviewedBeforeBatch + currentIndex + (showAnswer ? 1 : 0),
-      again: 0, // These would need to be tracked separately
-      hard: 0,
-      good: 0,
-      easy: 0,
-    };
-    // Merge with existing stats for rating counts
-    const existingStats = readQueueState(queueType)?.stats || { reviewed: 0, again: 0, hard: 0, good: 0, easy: 0 };
-    const mergedStats = { ...existingStats, reviewed: newStats.reviewed };
+  // Save per-word positions to localStorage and sync to server
+  const savePositionState = useCallback(() => {
+    const saved = readPositionState(mode);
+    const existingPositions = saved?.positions || {};
+    
+    // Build positions: keep existing positions for known words, assign new positions for new words
+    const positions: Record<number, number> = { ...existingPositions };
+    let maxPos = Math.max(...Object.values(existingPositions), -1);
+    
+    reviews.forEach((r) => {
+      if (!(r.wordId in positions)) {
+        maxPos += 1;
+        positions[r.wordId] = maxPos;
+      }
+    });
 
-    const state: QueueState = {
-      queueWordIds,
+    const state: PositionState = {
+      positions,
       currentIndex,
-      stats: mergedStats,
+      reviewedCount: reviewedBeforeBatch,
       updatedAt: new Date().toISOString(),
     };
+    writePositionState(mode, state);
+    savePositionsToServer(mode, positions);
+  }, [mode, reviews, currentIndex, reviewedBeforeBatch, savePositionsToServer]);
 
-    writeQueueState(queueType, state);
-    saveToServer(queueType, state);
-  }, [mode, reviews, currentIndex, reviewedBeforeBatch, showAnswer, saveToServer]);
+  // Save when currentIndex changes (debounced via savePositionsToServer)
+  useEffect(() => {
+    if (loading || sessionComplete || !synced) return;
+    savePositionState();
+  }, [currentIndex, reviewedBeforeBatch, reviews, loading, sessionComplete, synced, savePositionState]);
 
   const handleRate = useCallback(async (rating: Rating) => {
     const currentReview = reviews[currentIndex];
@@ -358,7 +471,7 @@ export function ReviewSession() {
         throw new Error("Failed to submit review");
       }
 
-      // Update rating counts in stats
+      // Update stats
       setStats((prev: any) => {
         const next = { ...prev };
         if (mode === "review") {
@@ -367,29 +480,13 @@ export function ReviewSession() {
         return next;
       });
 
-      // Update queue state stats with rating
-      const queueType = modeToQueueType(mode);
-      const existingState = readQueueState(queueType);
-      if (existingState) {
-        const ratingKey = rating === "again" ? "again" : rating === "hard" ? "hard" : rating === "good" ? "good" : "easy";
-        existingState.stats = {
-          ...existingState.stats,
-          [ratingKey]: (existingState.stats[ratingKey] || 0) + 1,
-          reviewed: existingState.stats.reviewed + 1,
-        };
-        existingState.currentIndex = currentIndex + 1;
-        existingState.updatedAt = new Date().toISOString();
-        writeQueueState(queueType, existingState);
-        saveToServer(queueType, existingState);
-      }
-
       if (currentIndex < reviews.length - 1) {
         setCurrentIndex(currentIndex + 1);
         setShowAnswer(false);
       } else {
         setSessionComplete(true);
         clearSavedPosition(mode);
-        clearQueueState(queueType);
+        clearPositionState(mode);
       }
     } catch (error) {
       console.error("Review submission error:", error);
@@ -397,13 +494,7 @@ export function ReviewSession() {
     } finally {
       setPendingRating(null);
     }
-  }, [reviews, currentIndex, pendingRating, mode, saveToServer]);
-
-  // Save queue state when currentIndex changes (debounced via saveToServer)
-  useEffect(() => {
-    if (loading || sessionComplete || !synced) return;
-    saveQueueState();
-  }, [currentIndex, reviewedBeforeBatch, showAnswer, loading, sessionComplete, synced, saveQueueState]);
+  }, [reviews, currentIndex, pendingRating, mode]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -548,7 +639,7 @@ export function ReviewSession() {
           onClick={handleCardToggle}
         >
           <div className="text-center">
-            <div className="relative inline-block px-12">
+            <div className="relative inline-block px-12 text-center">
               <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
                 {currentReview?.word?.word || "Word"}
               </h1>
