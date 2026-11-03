@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "migrate:multiuser": "node --env-file-if-exists=.env scripts/migrate-multiuser.ts",
-    "claim-owner": "node --env-file-if-exists=.env scripts/claim-owner.ts"
+    "claim-owner": "node --env-file-if-exists=.env scripts/claim-owner.ts",
+    "reset:unreviewed": "node --env-file-if-exists=.env scripts/reset-unreviewed-reviews.ts"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.2.0",
