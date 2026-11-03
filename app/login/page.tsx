@@ -1,15 +1,9 @@
 import NavBar from "@/components/NavBar";
 import { AuthForm } from "@/components/AuthForm";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
+import { safeNext } from "@/lib/auth/redirect";
 
-// Reads `searchParams` for the post-sign-in destination, so it is never static.
 export const instant = false;
-
-function safeNext(value: string | undefined): string {
-  if (!value) return "/review";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/review";
-  return value;
-}
 
 export default async function LoginPage({
   searchParams,
@@ -17,7 +11,7 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string | string[] }>;
 }) {
   const { next } = await searchParams;
-  const target = safeNext(Array.isArray(next) ? next[0] : next);
+  const target = safeNext(next);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">

@@ -33,6 +33,7 @@ const COPY = {
 export function AuthForm({ mode, next }: AuthFormProps) {
   const router = useRouter();
   const copy = COPY[mode];
+  const switchHref = `${copy.switchHref}?next=${encodeURIComponent(next)}`;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -106,7 +107,7 @@ export function AuthForm({ mode, next }: AuthFormProps) {
       <p className="text-center text-sm text-gray-600 dark:text-gray-400">
         {copy.switchText}{" "}
         <Link
-          href={copy.switchHref}
+          href={switchHref}
           className="font-medium text-blue-600 hover:underline dark:text-blue-400"
         >
           {copy.switchLabel}
