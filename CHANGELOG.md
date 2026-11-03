@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-11-03] Multi-user Accounts
+- Added email + password accounts with server-side sessions (`users`, `sessions`); passwords use Node scrypt, session cookies are HttpOnly/SameSite=Lax and stored as SHA-256 hashes
+- Added `/login`, `/signup`, `/api/auth/{signup,login,logout,me}`; NavBar shows the signed-in email and a sign-out action
+- `words` now belongs to a user (`words.user_id`, `UNIQUE(user_id, word)`); `reviews` and `review_history` are isolated through a `words` join
+- `/review`, `/words`, `/review-history` and the words/reviews APIs require a session; `/dictionary` stays public and prompts sign-in on save
+- Added `bun run migrate:multiuser` (idempotent, local + Turso, rebuilds `words` atomically without disabling foreign keys) and `bun run claim-owner` for manual recovery
+- The first account with `OWNER_EMAIL` claims all pre-existing words and review history
+- Playwright now runs on its own port and test database; added auth/isolation E2E coverage and fixed the stale dictionary spec
+
 ## [2024-11-02] Vocleap Next.js PWA
 
 ### Added
