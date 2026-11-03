@@ -1,5 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Tests must never touch the real database: the developer's `.env` points at
+// Turso, so force a local SQLite file here and delete it before the server boots.
+const TEST_DB = "./data/test.db";
+const TEST_PORT = 3101;
+const BASE_URL = `http://localhost:${TEST_PORT}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
@@ -7,9 +13,8 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
-  globalSetup: "./tests/global-setup.ts",
   use: {
-    baseURL: "http://localhost:3101",
+    baseURL: BASE_URL,
     trace: "on-first-retry",
   },
   projects: [
@@ -27,11 +32,15 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bunx next dev -p 3101",
-    url: "http://localhost:3101",
+    // Reset the database here rather than in globalSetup: Playwright starts the
+    // webServer before running global setups, so deleting the file afterwards
+    // would unlink the database the server already has open.
+    command: `rm -f ${TEST_DB} ${TEST_DB}-wal ${TEST_DB}-shm && bunx next dev -p ${TEST_PORT}`,
+    url: BASE_URL,
     reuseExistingServer: false,
     env: {
-      DB_PATH: "./data/test.db",
+      DB_MODE: "local",
+      DB_PATH: TEST_DB,
       OWNER_EMAIL: "owner@test.local",
     },
   },

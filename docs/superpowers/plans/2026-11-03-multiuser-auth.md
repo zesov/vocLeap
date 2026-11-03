@@ -62,33 +62,37 @@ Move (no URL change):
 
 ## Task 1: Make the Playwright harness deterministic
 
-The existing suite points at port 3001 while `bun dev` serves 3000, and the dictionary spec still assumes the home page contains the lookup form. Fix this first so every later task can run tests.
+The existing suite points at port 3001 while the developer's dev server already
+uses it, and the dictionary spec still assumes the home page contains the lookup
+form. The project's `.env` also sets `DB_MODE=turso`, so `DB_PATH` alone does not
+isolate tests — they would run against the production Turso database. Fix all of
+this first so every later task can run tests safely.
 
 **Files:**
 - Modify: `playwright.config.ts`
-- Create: `tests/global-setup.ts`
 - Modify: `tests/e2e/dictionary.spec.ts`
+- Modify: `.gitignore`
 
-- [ ] **Step 1: Add a global setup that deletes the test database**
+- [ ] **Step 1: Point Playwright at its own port and its own local database**
 
-Create `tests/global-setup.ts`:
+Do NOT create a `globalSetup` that deletes the database. Playwright starts the
+webServer *before* running global setups, so unlinking the file afterwards would
+delete the database the server already has open. Reset it in the webServer
+command instead.
 
-```ts
-import { rmSync } from "fs";
-
-export default function globalSetup() {
-  rmSync("./data/test.db", { force: true });
-  rmSync("./data/test.db-wal", { force: true });
-  rmSync("./data/test.db-shm", { force: true });
-}
-```
-
-- [ ] **Step 2: Point Playwright at its own server and database**
+Also use port 3101 rather than 3001: 3001 is the developer's running dev server,
+and Next 16 refuses to start a second dev server for the same directory.
 
 Replace `playwright.config.ts` with:
 
 ```ts
 import { defineConfig, devices } from "@playwright/test";
+
+// Tests must never touch the real database: the developer's `.env` points at
+// Turso, so force a local SQLite file here and delete it before the server boots.
+const TEST_DB = "./data/test.db";
+const TEST_PORT = 3101;
+const BASE_URL = `http://localhost:${TEST_PORT}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -97,9 +101,8 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
-  globalSetup: "./tests/global-setup.ts",
   use: {
-    baseURL: "http://localhost:3001",
+    baseURL: BASE_URL,
     trace: "on-first-retry",
   },
   projects: [
@@ -117,15 +120,31 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bunx next dev -p 3001",
-    url: "http://localhost:3001",
+    // Reset the database here rather than in globalSetup: Playwright starts the
+    // webServer before running global setups, so deleting the file afterwards
+    // would unlink the database the server already has open.
+    command: `rm -f ${TEST_DB} ${TEST_DB}-wal ${TEST_DB}-shm && bunx next dev -p ${TEST_PORT}`,
+    url: BASE_URL,
     reuseExistingServer: false,
     env: {
-      DB_PATH: "./data/test.db",
+      DB_MODE: "local",
+      DB_PATH: TEST_DB,
       OWNER_EMAIL: "owner@test.local",
     },
   },
 });
+```
+
+`DB_MODE` is required: `process.env` wins over `.env`, so this overrides the
+developer's `DB_MODE=turso` and keeps test data out of production.
+
+- [ ] **Step 2: Ignore Playwright artifacts**
+
+Add to `.gitignore`:
+
+```
+/playwright-report/
+/test-results/
 ```
 
 - [ ] **Step 3: Rewrite the stale dictionary spec**
@@ -171,12 +190,14 @@ test.describe("Landing and dictionary", () => {
 
 Run: `bunx playwright test tests/e2e/dictionary.spec.ts --project=chromium`
 
-Expected: 2 passed. A new `data/test.db` file exists afterwards.
+Expected: 2 passed. No `data/test.db` yet — these two tests never touch the DB.
+Run `curl http://localhost:3101/api/words` while a test server is up if you want
+to confirm the test database is local.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add playwright.config.ts tests/global-setup.ts tests/e2e/dictionary.spec.ts
+git add .gitignore playwright.config.ts tests/e2e/dictionary.spec.ts
 git commit -m "test: isolate playwright database and fix dictionary spec"
 ```
 
