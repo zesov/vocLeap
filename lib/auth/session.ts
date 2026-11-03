@@ -2,8 +2,9 @@ import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { createHash, randomBytes } from "crypto";
 import { db, initDatabase } from "@/lib/db/init";
+import { SESSION_COOKIE } from "./cookies";
 
-export const SESSION_COOKIE = "vocleap_session";
+export { SESSION_COOKIE };
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
