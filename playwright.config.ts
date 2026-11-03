@@ -7,8 +7,9 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
+  globalSetup: "./tests/global-setup.ts",
   use: {
-    baseURL: "http://localhost:3001",
+    baseURL: "http://localhost:3101",
     trace: "on-first-retry",
   },
   projects: [
@@ -26,8 +27,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun dev",
-    url: "http://localhost:3001",
-    reuseExistingServer: !process.env.CI,
+    command: "bunx next dev -p 3101",
+    url: "http://localhost:3101",
+    reuseExistingServer: false,
+    env: {
+      DB_PATH: "./data/test.db",
+      OWNER_EMAIL: "owner@test.local",
+    },
   },
 });

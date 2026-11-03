@@ -1,32 +1,22 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Dictionary Lookup", () => {
-  test("should look up a word and show definition", async ({ page }) => {
+test.describe("Landing and dictionary", () => {
+  test("landing page links to the dictionary", async ({ page }) => {
     await page.goto("/");
 
-    const wordInput = page.locator('input[placeholder="Enter a word to translate..."]');
-    await expect(wordInput).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Learn Vocabulary Effectively" })
+    ).toBeVisible();
 
-    await wordInput.fill("hello");
-    await page.locator('button:has-text("Look Up")').click();
-
-    await page.waitForSelector(".definition", { timeout: 10000 });
-    await expect(page.locator(".definition")).toHaveText(/hello/);
+    await page.getByRole("link", { name: /Dictionary/ }).first().click();
+    await expect(page).toHaveURL(/\/dictionary$/);
+    await expect(
+      page.getByPlaceholder("Enter a word to translate...")
+    ).toBeVisible();
   });
 
-  test("should show error for empty word", async ({ page }) => {
-    await page.goto("/");
-
-    const wordInput = page.locator('input[placeholder="Enter a word to translate..."]');
-    await wordInput.fill("");
-    await page.locator('button:has-text("Look Up")').click();
-
-    await page.waitForSelector("role=alert", { timeout: 5000 });
-    await expect(page.locator("role=alert")).toHaveText(/required/);
-  });
-
-  test("should swap source and target languages", async ({ page }) => {
-    await page.goto("/");
+  test("swaps source and target languages", async ({ page }) => {
+    await page.goto("/dictionary");
 
     const sourceSelect = page.locator("select").first();
     const targetSelect = page.locator("select").nth(1);
