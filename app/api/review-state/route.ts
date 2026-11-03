@@ -47,7 +47,23 @@ export async function GET(request: NextRequest) {
           deviceId: r.device_id,
           updatedAt: r.updated_at,
         }));
-        return NextResponse.json({ mode, states, meta: null });
+
+        // Get meta from the device with the latest updated_at
+        let meta: { currentIndex: number; reviewedCount: number; updatedAt: string } | null = null;
+        if (rows.length > 0) {
+          // Get unique device_ids from the states
+          const deviceIds = [...new Set(rows.map(r => r.device_id))];
+          for (const deviceId of deviceIds) {
+            const metaResult = await getUserReviewMeta(user.id, deviceId, mode as "review" | "new");
+            if (metaResult) {
+              if (!meta || metaResult.updatedAt > meta.updatedAt) {
+                meta = metaResult;
+              }
+            }
+          }
+        }
+
+        return NextResponse.json({ mode, states, meta });
       }
 
       const [states, meta] = await Promise.all([

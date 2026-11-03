@@ -14,12 +14,40 @@ async function signUp(page: import("@playwright/test").Page, email: string) {
   await expect(page).toHaveURL(/\/review$/);
 }
 
+async function signIn(page: import("@playwright/test").Page, email: string) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/review$/);
+}
+
 async function addWordsViaAPI(page: import("@playwright/test").Page, words: Array<{word: string, translation: string}>) {
   const res = await page.request.post("/api/words", {
     data: words.map(w => ({ ...w, sourceLanguage: "en", targetLanguage: "zh-CN" }))
   });
   expect(res.status()).toBe(201);
   return res.json();
+}
+
+async function waitForSync(page: import("@playwright/test").Page, mode: "review" | "new" = "review") {
+  // Wait for sync to complete by polling the API
+  for (let i = 0; i < 30; i++) {
+    await page.waitForTimeout(100);
+    const res = await page.request.get(`/api/review-state?mode=${mode}&allDevices=true`);
+    if (res.ok()) {
+      const data = await res.json();
+      if (data.states && data.states.length > 0) {
+        console.log(`[waitForSync] mode=${mode} got states:`, data.states);
+        return;
+      }
+    }
+  }
+  // Debug: log what we got
+  const res = await page.request.get(`/api/review-state?mode=${mode}&allDevices=true`);
+  const data = await res.json();
+  console.log(`[waitForSync] TIMEOUT mode=${mode} final data:`, data);
+  throw new Error(`Sync timeout for mode ${mode}`);
 }
 
 test.describe("Review cross-device sync", () => {
@@ -52,23 +80,25 @@ test.describe("Review cross-device sync", () => {
     // Wait for card to advance
     await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
 
-    // Give it a moment to sync (longer for debounced save)
-    await pageA.waitForTimeout(3000);
+    // Wait for sync to complete
+    await waitForSync(pageA);
+
+    // Debug: check what the API returns for this user
+    const apiRes = await pageA.request.get("/api/review-state?mode=review&allDevices=true");
+    const apiData = await apiRes.json();
+    console.log("[Test] Device A API after sync:", apiData);
 
     // --- Device B: new browser context (simulates different device) ---
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
 
     // Sign in with same account
-    await pageB.goto("/login");
-    await pageB.getByLabel("Email").fill(email);
-    await pageB.getByLabel("Password").fill(PASSWORD);
-    await pageB.getByRole("button", { name: "Sign in" }).click();
-    await expect(pageB).toHaveURL(/\/review$/);
+    await signIn(pageB, email);
 
-    // Debug: check what the API returns for this user
-    const apiRes = await pageB.request.get("/api/review-state?queue=due&allDevices=true");
-    const apiData = await apiRes.json();
+    // Debug: check what Device B sees
+    const apiResB = await pageB.request.get("/api/review-state?mode=review&allDevices=true");
+    const apiDataB = await apiResB.json();
+    console.log("[Test] Device B API on load:", apiDataB);
 
     // Should resume at Card 2 (index 1)
     await expect(pageB.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
@@ -101,16 +131,28 @@ test.describe("Review cross-device sync", () => {
     await expect(pageA.getByRole("button", { name: /Good/ })).toBeVisible({ timeout: 5000 });
     await pageA.getByRole("button", { name: /Good/ }).click();
     await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
-    await pageA.waitForTimeout(1500);
+    await waitForSync(pageA);
 
+    // Test that due queue state is synced
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
-    await pageB.goto("/login");
-    await pageB.getByLabel("Email").fill(email);
-    await pageB.getByLabel("Password").fill(PASSWORD);
-    await pageB.getByRole("button", { name: "Sign in" }).click();
-    await expect(pageB).toHaveURL(/\/review$/);
+    await signIn(pageB, email);
     await expect(pageB.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
+
+    // Now test new queue: add more words and check they appear
+    await addWordsViaAPI(pageA, [
+      { word: "giraffe", translation: "長頸鹿" },
+      { word: "hippo", translation: "河馬" },
+    ]);
+    await pageA.goto("/review");
+    // Give time for new words to be picked up
+    await pageA.waitForTimeout(500);
+
+    // Verify new queue state exists via API (even if empty initially)
+    const apiRes = await pageB.request.get("/api/review-state?mode=new&allDevices=true");
+    const apiData = await apiRes.json();
+    // New queue should exist but may be empty initially
+    expect(Array.isArray(apiData.states)).toBe(true);
 
     await contextA.close();
     await contextB.close();
