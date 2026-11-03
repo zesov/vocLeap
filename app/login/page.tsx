@@ -2,6 +2,9 @@ import NavBar from "@/components/NavBar";
 import { AuthForm } from "@/components/AuthForm";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 
+// Reads `searchParams` for the post-sign-in destination, so it is never static.
+export const instant = false;
+
 function safeNext(value: string | undefined): string {
   if (!value) return "/review";
   if (!value.startsWith("/") || value.startsWith("//")) return "/review";
