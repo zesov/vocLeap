@@ -32,26 +32,24 @@ export async function GET(request: NextRequest) {
         );
       }
       if (action === "all") {
-        // Get all reviews for user (for restoring queue from synced positions)
         const limit = parseInt(searchParams.get("limit") || "200", 10);
+        const includeNew = searchParams.get("mode") === "new";
         const stmt = db.prepare(`
-          SELECT r.*, w.word, w.translation, w.definitions, w.examples, w.phonetic, w.audio_url, w.source_language, w.target_language
-          FROM reviews r
-          JOIN words w ON r.word_id = w.id
+          SELECT w.id AS word_id, w.word, w.translation, w.definitions, w.examples,
+                 w.phonetic, w.audio_url, w.source_language, w.target_language,
+                 w.created_at AS word_created_at, w.updated_at AS word_updated_at,
+                 r.id AS review_id, r.ease_factor, r.interval, r.repetitions,
+                 r.next_review_date, r.last_reviewed,
+                 r.created_at AS review_created_at, r.updated_at AS review_updated_at
+          FROM words w
+          LEFT JOIN reviews r ON r.word_id = w.id
           WHERE w.user_id = ?
-          ORDER BY r.next_review_date ASC
+            ${includeNew ? "" : "AND r.word_id IS NOT NULL"}
+          ORDER BY ${includeNew ? "w.created_at DESC" : "r.next_review_date ASC"}
           LIMIT ?
         `);
-        interface ReviewWithWordRow {
-          id: number;
+        interface AllQueueRow {
           word_id: number;
-          ease_factor: number;
-          interval: number;
-          repetitions: number;
-          next_review_date: string;
-          last_reviewed: string | null;
-          created_at: string | null;
-          updated_at: string | null;
           word: string;
           translation: string;
           definitions: string | null;
@@ -60,18 +58,28 @@ export async function GET(request: NextRequest) {
           audio_url: string | null;
           source_language: string;
           target_language: string;
+          word_created_at: string | null;
+          word_updated_at: string | null;
+          review_id: number | null;
+          ease_factor: number | null;
+          interval: number | null;
+          repetitions: number | null;
+          next_review_date: string | null;
+          last_reviewed: string | null;
+          review_created_at: string | null;
+          review_updated_at: string | null;
         }
-        const rows = (await stmt.all(user.id, limit)) as unknown as ReviewWithWordRow[];
+        const rows = (await stmt.all(user.id, limit)) as unknown as AllQueueRow[];
         return NextResponse.json(rows.map((r) => ({
-          id: r.id,
+          id: r.review_id ?? 0,
           wordId: r.word_id,
-          easeFactor: r.ease_factor,
-          interval: r.interval,
-          repetitions: r.repetitions,
-          nextReviewDate: r.next_review_date,
+          easeFactor: r.ease_factor ?? 2.5,
+          interval: r.interval ?? 0,
+          repetitions: r.repetitions ?? 0,
+          nextReviewDate: r.next_review_date ?? new Date().toISOString(),
           lastReviewed: r.last_reviewed ?? undefined,
-          createdAt: r.created_at ?? undefined,
-          updatedAt: r.updated_at ?? undefined,
+          createdAt: r.review_created_at ?? r.word_created_at ?? undefined,
+          updatedAt: r.review_updated_at ?? r.word_updated_at ?? undefined,
           word: {
             id: r.word_id,
             word: r.word,
