@@ -1,8 +1,17 @@
 import NavBar from "@/components/NavBar";
 import { AuthForm } from "@/components/AuthForm";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
+import { safeNext } from "@/lib/auth/redirect";
 
-export default function SignupPage() {
+export const instant = false;
+
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string | string[] }>;
+}) {
+  const { next } = await searchParams;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <NavBar />
@@ -14,7 +23,7 @@ export default function SignupPage() {
             </h1>
           </CardHeader>
           <CardContent>
-            <AuthForm mode="signup" next="/review" />
+            <AuthForm mode="signup" next={safeNext(next)} />
           </CardContent>
         </Card>
       </div>
