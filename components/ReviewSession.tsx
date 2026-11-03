@@ -72,11 +72,58 @@ function clearSavedPosition(mode: Mode) {
 // New per-word position storage for cross-device sync
 const POSITIONS_STORAGE_KEY = (mode: Mode) => `review_${mode}_positions`;
 
+const DEVICE_ID_KEY = "vocleap_device_id";
+
+function getOrCreateDeviceId(): string {
+  if (typeof window === "undefined") return "";
+  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+  }
+  return deviceId;
+}
+
+// Constants for debouncing
+const SYNC_DEBOUNCE_MS = 500;
+const LOCAL_STORAGE_DEBOUNCE_MS = 100;
+
+interface Review {
+  wordId: number;
+  word: {
+    word: string;
+    translation: string;
+    definitions: string[];
+    examples: string[];
+    phonetic?: string;
+    audioUrl?: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+  };
+  easeFactor: number;
+  interval: number;
+  repetitions: number;
+  nextReviewDate: string;
+}
+
+interface Stats {
+  due: number;
+  total: number;
+  newWords: number;
+}
+
 interface PositionState {
   positions: Record<number, number>; // wordId -> position in queue
   currentIndex: number; // current index in the remaining queue
   reviewedCount: number; // number of words reviewed in this session
   updatedAt: string;
+}
+
+interface ServerState {
+  mode: "review" | "new";
+  deviceId: string;
+  states: Array<{ wordId: number; position: number; updatedAt: string }>;
+  meta: { currentIndex: number; reviewedCount: number; updatedAt: string } | null;
 }
 
 function readPositionState(mode: Mode): PositionState | null {
@@ -116,21 +163,76 @@ function clearPositionState(mode: Mode) {
   }
 }
 
+// Merge server state with local state (last-write-wins per word)
+function mergeServerState(
+  mode: Mode,
+  serverData: ServerState,
+  localState: PositionState | null
+): PositionState {
+  const now = new Date().toISOString();
+  
+  if (!localState) {
+    // No local state - use server state
+    const positions: Record<number, number> = {};
+    for (const s of serverData.states) {
+      positions[s.wordId] = s.position;
+    }
+    const maxUpdatedAt = serverData.states.length > 0
+      ? serverData.states.reduce((max, s) => s.updatedAt > max ? s.updatedAt : max, serverData.states[0].updatedAt)
+      : now;
+    return {
+      positions,
+      currentIndex: serverData.meta?.currentIndex ?? 0,
+      reviewedCount: serverData.meta?.reviewedCount ?? 0,
+      updatedAt: maxUpdatedAt,
+    };
+  }
+
+  // Merge: take latest per word
+  const mergedPositions = { ...localState.positions };
+  let maxUpdatedAt = localState.updatedAt;
+
+  for (const s of serverData.states) {
+    const localUpdated = localState.updatedAt;
+    const serverUpdated = s.updatedAt;
+    if (!mergedPositions[s.wordId] || (serverUpdated && (!localUpdated || serverUpdated > localUpdated))) {
+      mergedPositions[s.wordId] = s.position;
+    }
+    if (serverUpdated && serverUpdated > maxUpdatedAt) {
+      maxUpdatedAt = serverUpdated;
+    }
+  }
+
+  // Also check meta updatedAt
+  if (serverData.meta && serverData.meta.updatedAt && serverData.meta.updatedAt > maxUpdatedAt) {
+    maxUpdatedAt = serverData.meta.updatedAt;
+  }
+
+  return {
+    positions: mergedPositions,
+    currentIndex: serverData.meta?.currentIndex ?? localState.currentIndex,
+    reviewedCount: serverData.meta?.reviewedCount ?? localState.reviewedCount,
+    updatedAt: maxUpdatedAt,
+  };
+}
+
 export function ReviewSession() {
   const [mode, setMode] = useState<Mode>("review");
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [reviewedBeforeBatch, setReviewedBeforeBatch] = useState(0);
   const [loadedMode, setLoadedMode] = useState<Mode | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [stats, setStats] = useState<any>({ due: 0, total: 0, newWords: 0 });
+  const [stats, setStats] = useState<Stats>({ due: 0, total: 0, newWords: 0 });
   const [loading, setLoading] = useState(true);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [pendingRating, setPendingRating] = useState<Rating | null>(null);
 
   // Sync state
+  const [deviceId] = useState(() => getOrCreateDeviceId());
   const [synced, setSynced] = useState(false);
   const syncPositionsRef = useRef<Record<Mode, NodeJS.Timeout>>({ review: null, new: null } as any);
+  const localStorageDebounceRef = useRef<Record<Mode, NodeJS.Timeout>>({ review: null, new: null } as any);
 
   const totalReviews = reviewedBeforeBatch + reviews.length;
 
@@ -174,7 +276,7 @@ export function ReviewSession() {
   // Debounced save positions to server
   const savePositionsToServer = useCallback(
     (mode: Mode, positions: Record<number, number>) => {
-      if (!synced) return;
+      if (!synced || !deviceId) return;
 
       const existing = syncPositionsRef.current[mode];
       if (existing) clearTimeout(existing);
@@ -197,7 +299,7 @@ export function ReviewSession() {
           await fetch("/api/review-state", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode, states, meta }),
+            body: JSON.stringify({ deviceId, mode, states, meta }),
           });
 
           // Update local updatedAt on success
@@ -208,22 +310,23 @@ export function ReviewSession() {
         } catch (e) {
           console.error("Sync save failed:", e);
         }
-      }, 500);
+      }, SYNC_DEBOUNCE_MS);
 
       syncPositionsRef.current[mode] = timeout;
     },
-    [synced]
+    [synced, deviceId]
   );
 
   // Load from server on mount (fetch per-word positions for cross-device sync)
   useEffect(() => {
+    if (!deviceId) return;
     let cancelled = false;
 
     async function load() {
       try {
         const [reviewRes, newRes] = await Promise.all([
-          fetch("/api/review-state?mode=review"),
-          fetch("/api/review-state?mode=new"),
+          fetch(`/api/review-state?mode=review&deviceId=${deviceId}`),
+          fetch(`/api/review-state?mode=new&deviceId=${deviceId}`),
         ]);
 
         if (cancelled) return;
@@ -231,63 +334,14 @@ export function ReviewSession() {
         if (reviewRes.ok) {
           const reviewData = await reviewRes.json();
           const localReview = readPositionState("review");
-          const hasServerData = reviewData.states && reviewData.states.length > 0 && reviewData.states[0].updatedAt;
-          if (!localReview || (hasServerData && (!localReview.updatedAt || reviewData.states[0].updatedAt > localReview.updatedAt))) {
-            // Merge server positions into local (take latest per word)
-            const mergedPositions = { ...localReview?.positions || {} };
-            for (const s of reviewData.states) {
-              if (!mergedPositions[s.wordId] || (s.updatedAt && (!localReview?.updatedAt || s.updatedAt > localReview.updatedAt))) {
-                mergedPositions[s.wordId] = s.position;
-              }
-            }
-            // Also restore meta (currentIndex, reviewedCount)
-            const meta = reviewData.meta;
-            writePositionState("review", { 
-              positions: mergedPositions, 
-              currentIndex: meta?.currentIndex ?? 0,
-              reviewedCount: meta?.reviewedCount ?? 0,
-              updatedAt: reviewData.states[0]?.updatedAt || new Date().toISOString() 
-            });
-          } else if (reviewData.meta && localReview) {
-            // Server has newer meta even if positions are same
-            if (!localReview.updatedAt || reviewData.meta.updatedAt > localReview.updatedAt) {
-              writePositionState("review", { 
-                ...localReview,
-                currentIndex: reviewData.meta.currentIndex,
-                reviewedCount: reviewData.meta.reviewedCount,
-                updatedAt: reviewData.meta.updatedAt,
-              });
-            }
-          }
+          const merged = mergeServerState("review", reviewData, localReview);
+          writePositionState("review", merged);
         }
         if (newRes.ok) {
           const newData = await newRes.json();
           const localNew = readPositionState("new");
-          const hasServerData = newData.states && newData.states.length > 0 && newData.states[0].updatedAt;
-          if (!localNew || (hasServerData && (!localNew.updatedAt || newData.states[0].updatedAt > localNew.updatedAt))) {
-            const mergedPositions = { ...localNew?.positions || {} };
-            for (const s of newData.states) {
-              if (!mergedPositions[s.wordId] || (s.updatedAt && (!localNew?.updatedAt || s.updatedAt > localNew.updatedAt))) {
-                mergedPositions[s.wordId] = s.position;
-              }
-            }
-            const meta = newData.meta;
-            writePositionState("new", { 
-              positions: mergedPositions, 
-              currentIndex: meta?.currentIndex ?? 0,
-              reviewedCount: meta?.reviewedCount ?? 0,
-              updatedAt: newData.states[0]?.updatedAt || new Date().toISOString() 
-            });
-          } else if (newData.meta && localNew) {
-            if (!localNew.updatedAt || newData.meta.updatedAt > localNew.updatedAt) {
-              writePositionState("new", { 
-                ...localNew,
-                currentIndex: newData.meta.currentIndex,
-                reviewedCount: newData.meta.reviewedCount,
-                updatedAt: newData.meta.updatedAt,
-              });
-            }
-          }
+          const merged = mergeServerState("new", newData, localNew);
+          writePositionState("new", merged);
         }
 
         setSynced(true);
@@ -299,7 +353,7 @@ export function ReviewSession() {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [deviceId]);
 
   const fetchReviews = async () => {
     setLoading(true);
@@ -389,9 +443,13 @@ export function ReviewSession() {
   useEffect(() => {
     let cancelled = false;
     async function run() {
+      // Wait for sync to complete (with timeout fallback)
       if (!synced) {
         await new Promise<void>((resolve) => {
-          const timeout = setTimeout(resolve, 2000);
+          const timeout = setTimeout(() => {
+            console.warn("Sync timeout, proceeding anyway");
+            resolve();
+          }, 3000);
           const checkSync = () => {
             if (synced || cancelled) {
               clearTimeout(timeout);
@@ -422,7 +480,7 @@ export function ReviewSession() {
     });
   }, [loading, sessionComplete, loadedMode, mode, reviews, currentIndex, reviewedBeforeBatch]);
 
-  // Save per-word positions to localStorage and sync to server
+  // Save per-word positions to localStorage (debounced) and sync to server
   const savePositionState = useCallback(() => {
     const saved = readPositionState(mode);
     const existingPositions = saved?.positions || {};
@@ -444,7 +502,16 @@ export function ReviewSession() {
       reviewedCount: reviewedBeforeBatch,
       updatedAt: new Date().toISOString(),
     };
-    writePositionState(mode, state);
+
+    // Debounced localStorage write
+    const existing = localStorageDebounceRef.current[mode];
+    if (existing) clearTimeout(existing);
+    const timeout = setTimeout(() => {
+      writePositionState(mode, state);
+    }, LOCAL_STORAGE_DEBOUNCE_MS);
+    localStorageDebounceRef.current[mode] = timeout;
+
+    // Server sync (already debounced via savePositionsToServer)
     savePositionsToServer(mode, positions);
   }, [mode, reviews, currentIndex, reviewedBeforeBatch, savePositionsToServer]);
 
