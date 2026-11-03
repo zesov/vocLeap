@@ -59,13 +59,17 @@ test.describe("Review cross-device sync", () => {
     const pageA = await contextA.newPage();
     await signUp(pageA, email);
 
-    // Add 3 words so we have a due queue
     const words = [
       { word: "apple", translation: "蘋果" },
       { word: "banana", translation: "香蕉" },
       { word: "cat", translation: "貓" },
     ];
     await addWordsViaAPI(pageA, words);
+
+    const stats = await (await pageA.request.get("/api/reviews?action=stats")).json();
+    expect(stats.newWords).toBe(3);
+    expect(stats.due).toBe(0);
+    expect(stats.total).toBe(3);
 
     await pageA.goto("/review");
     await expect(pageA.getByText(/Card 1 of/)).toBeVisible();
@@ -81,10 +85,10 @@ test.describe("Review cross-device sync", () => {
     await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
 
     // Wait for sync to complete
-    await waitForSync(pageA);
+    await waitForSync(pageA, "new");
 
     // Debug: check what the API returns for this user
-    const apiRes = await pageA.request.get("/api/review-state?mode=review&allDevices=true");
+    const apiRes = await pageA.request.get("/api/review-state?mode=new&allDevices=true");
     const apiData = await apiRes.json();
     console.log("[Test] Device A API after sync:", apiData);
 
@@ -96,7 +100,7 @@ test.describe("Review cross-device sync", () => {
     await signIn(pageB, email);
 
     // Debug: check what Device B sees
-    const apiResB = await pageB.request.get("/api/review-state?mode=review&allDevices=true");
+    const apiResB = await pageB.request.get("/api/review-state?mode=new&allDevices=true");
     const apiDataB = await apiResB.json();
     console.log("[Test] Device B API on load:", apiDataB);
 
@@ -131,7 +135,7 @@ test.describe("Review cross-device sync", () => {
     await expect(pageA.getByRole("button", { name: /Good/ })).toBeVisible({ timeout: 5000 });
     await pageA.getByRole("button", { name: /Good/ }).click();
     await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
-    await waitForSync(pageA);
+    await waitForSync(pageA, "new");
 
     // Test that due queue state is synced
     const contextB = await browser.newContext();
