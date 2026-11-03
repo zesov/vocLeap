@@ -70,6 +70,20 @@ const REBUILD_STATEMENTS = [
           reviewed_at
    FROM review_history`,
 
+  `CREATE TABLE review_sessions_migrated (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL,
+    queue_type TEXT NOT NULL CHECK (queue_type IN ('due','new')),
+    queue_word_ids TEXT NOT NULL,
+    current_index INTEGER NOT NULL DEFAULT 0,
+    stats_json TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, device_id, queue_type)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions_migrated(user_id)`,
+
   `DROP TABLE review_history`,
   `DROP TABLE reviews`,
   `DROP TABLE words`,
