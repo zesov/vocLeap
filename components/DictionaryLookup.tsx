@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -33,6 +34,7 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [saveRequiresAuth, setSaveRequiresAuth] = useState(false);
 
   const languageOptions = [
     { value: "en", label: "English" },
@@ -55,6 +57,7 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
       setError("");
       setResult(null);
       setSaveMessage("");
+      setSaveRequiresAuth(false);
 
       try {
         const response = await fetch("/api/translate", {
@@ -101,6 +104,7 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
     
     setSaving(true);
     setSaveMessage("");
+    setSaveRequiresAuth(false);
     
     try {
       const response = await fetch("/api/words", {
@@ -121,7 +125,10 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
       const data = await response.json();
       
       if (!response.ok) {
-        if (response.status === 409) {
+        if (response.status === 401) {
+          setSaveRequiresAuth(true);
+          setSaveMessage("");
+        } else if (response.status === 409) {
           setSaveMessage("Word already saved!");
         } else {
           throw new Error(data.error || "Save failed");
@@ -246,6 +253,18 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
               {saveMessage && (
                 <p className={`text-sm ${saveMessage.includes("error") || saveMessage.includes("failed") ? "text-red-600" : "text-green-600"} dark:text-green-400`}>
                   {saveMessage}
+                </p>
+              )}
+
+              {saveRequiresAuth && (
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <Link
+                    href="/login?next=/dictionary"
+                    className="font-medium text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Sign in
+                  </Link>{" "}
+                  to save this word.
                 </p>
               )}
             </div>
