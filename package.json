@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate:multiuser": "node scripts/migrate-multiuser.ts",
-    "claim-owner": "node scripts/claim-owner.ts"
+    "migrate:multiuser": "node --env-file-if-exists=.env scripts/migrate-multiuser.ts",
+    "claim-owner": "node --env-file-if-exists=.env scripts/claim-owner.ts"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.2.0",

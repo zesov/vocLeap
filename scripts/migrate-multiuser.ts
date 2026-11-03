@@ -94,7 +94,30 @@ async function count(table: string): Promise<number> {
   return Number(row?.count ?? 0);
 }
 
+function describeTarget(): string {
+  if ((process.env.DB_MODE || "local") === "turso") {
+    return `turso ${process.env.TURSO_URL || "(default url)"}`;
+  }
+  return `local ${process.env.DB_PATH || "./data/vocleap.db"}`;
+}
+
+async function assertNoOrphans(stage: string): Promise<void> {
+  const rows = await db.prepare("PRAGMA foreign_key_check").all();
+  if (rows.length === 0) return;
+
+  const sample = rows
+    .slice(0, 5)
+    .map((row) => `${row.table}#${row.rowid} → ${row.parent}`)
+    .join(", ");
+  throw new Error(
+    `${stage}: ${rows.length} orphaned row(s) break foreign keys (${sample}). ` +
+      `Repair them before migrating.`
+  );
+}
+
 async function main() {
+  console.log(`Target: ${describeTarget()}`);
+
   await initDatabase();
 
   if (await wordsHasColumn("user_id")) {
@@ -105,6 +128,8 @@ async function main() {
   const beforeWords = await count("words");
   const beforeReviews = await count("reviews");
   const beforeHistory = await count("review_history");
+
+  await assertNoOrphans("Before migration");
 
   console.log(
     `Migrating ${beforeWords} words, ${beforeReviews} reviews, ${beforeHistory} history rows...`
@@ -127,14 +152,23 @@ async function main() {
     );
   }
 
+  await assertNoOrphans("After migration");
+
+  const columns = await db.prepare("PRAGMA table_info(words)").all();
+  console.log(
+    `words columns: ${columns.map((row) => String(row.name)).join(", ")}`
+  );
   console.log(
     `Migration complete: words ${afterWords}, reviews ${afterReviews}, history ${afterHistory}.`
   );
 }
 
 main()
-  .then(() => process.exit(0))
-  .catch((error) => {
+  .then(async () => {
+    await db.close();
+  })
+  .catch(async (error) => {
     console.error("Migration failed:", error);
-    process.exit(1);
+    process.exitCode = 1;
+    await db.close().catch(() => {});
   });
