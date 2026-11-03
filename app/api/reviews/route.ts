@@ -6,6 +6,7 @@ import {
 } from "@/lib/db/operations";
 import { sm2Algorithm, parseRating, getInitialSM2State, formatDateForDB } from "@/lib/srs/sm2";
 import { withUser } from "@/lib/auth/guard";
+import { db } from "@/lib/db/init";
 
 export async function GET(request: NextRequest) {
   return withUser(async (user) => {
@@ -29,6 +30,60 @@ export async function GET(request: NextRequest) {
             parseInt(searchParams.get("limit") || "20", 10)
           )
         );
+      }
+      if (action === "all") {
+        // Get all reviews for user (for restoring queue from synced positions)
+        const limit = parseInt(searchParams.get("limit") || "200", 10);
+        const stmt = db.prepare(`
+          SELECT r.*, w.word, w.translation, w.definitions, w.examples, w.phonetic, w.audio_url, w.source_language, w.target_language
+          FROM reviews r
+          JOIN words w ON r.word_id = w.id
+          WHERE w.user_id = ?
+          ORDER BY r.next_review_date ASC
+          LIMIT ?
+        `);
+        interface ReviewWithWordRow {
+          id: number;
+          word_id: number;
+          ease_factor: number;
+          interval: number;
+          repetitions: number;
+          next_review_date: string;
+          last_reviewed: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+          word: string;
+          translation: string;
+          definitions: string | null;
+          examples: string | null;
+          phonetic: string | null;
+          audio_url: string | null;
+          source_language: string;
+          target_language: string;
+        }
+        const rows = (await stmt.all(user.id, limit)) as unknown as ReviewWithWordRow[];
+        return NextResponse.json(rows.map((r) => ({
+          id: r.id,
+          wordId: r.word_id,
+          easeFactor: r.ease_factor,
+          interval: r.interval,
+          repetitions: r.repetitions,
+          nextReviewDate: r.next_review_date,
+          lastReviewed: r.last_reviewed ?? undefined,
+          createdAt: r.created_at ?? undefined,
+          updatedAt: r.updated_at ?? undefined,
+          word: {
+            id: r.word_id,
+            word: r.word,
+            translation: r.translation,
+            definitions: JSON.parse(String(r.definitions || "[]")),
+            examples: JSON.parse(String(r.examples || "[]")),
+            phonetic: r.phonetic ?? undefined,
+            audioUrl: r.audio_url ?? undefined,
+            sourceLanguage: r.source_language,
+            targetLanguage: r.target_language,
+          },
+        })));
       }
       if (action === "stats") {
         return NextResponse.json(await getReviewStats(user.id));

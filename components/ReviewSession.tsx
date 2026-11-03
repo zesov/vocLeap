@@ -275,7 +275,7 @@ export function ReviewSession() {
 
   // Debounced save positions to server
   const savePositionsToServer = useCallback(
-    (mode: Mode, positions: Record<number, number>) => {
+    (mode: Mode, positions: Record<number, number>, currentIndex: number, reviewedCount: number) => {
       if (!synced || !deviceId) return;
 
       const existing = syncPositionsRef.current[mode];
@@ -289,12 +289,10 @@ export function ReviewSession() {
             updatedAt: new Date().toISOString(),
           }));
 
-          // Get current meta to send with positions
-          const local = readPositionState(mode);
-          const meta = local ? {
-            currentIndex: local.currentIndex ?? 0,
-            reviewedCount: local.reviewedCount ?? 0,
-          } : null;
+          const meta = {
+            currentIndex,
+            reviewedCount,
+          };
 
           await fetch("/api/review-state", {
             method: "POST",
@@ -303,6 +301,7 @@ export function ReviewSession() {
           });
 
           // Update local updatedAt on success
+          const local = readPositionState(mode);
           if (local) {
             local.updatedAt = new Date().toISOString();
             writePositionState(mode, local);
@@ -318,15 +317,18 @@ export function ReviewSession() {
   );
 
   // Load from server on mount (fetch per-word positions for cross-device sync)
+  // Uses allDevices=true on initial load to get latest state across all devices
   useEffect(() => {
     if (!deviceId) return;
     let cancelled = false;
 
     async function load() {
       try {
+        // On initial load, fetch latest state across ALL devices for cross-device sync
+        // Subsequent writes will use the current deviceId
         const [reviewRes, newRes] = await Promise.all([
-          fetch(`/api/review-state?mode=review&deviceId=${deviceId}`),
-          fetch(`/api/review-state?mode=new&deviceId=${deviceId}`),
+          fetch(`/api/review-state?mode=review&allDevices=true`),
+          fetch(`/api/review-state?mode=new&allDevices=true`),
         ]);
 
         if (cancelled) return;
@@ -512,7 +514,8 @@ export function ReviewSession() {
     localStorageDebounceRef.current[mode] = timeout;
 
     // Server sync (already debounced via savePositionsToServer)
-    savePositionsToServer(mode, positions);
+    // Pass current meta directly to avoid race condition with localStorage debounce
+    savePositionsToServer(mode, positions, currentIndex, reviewedBeforeBatch);
   }, [mode, reviews, currentIndex, reviewedBeforeBatch, savePositionsToServer]);
 
   // Save when currentIndex changes (debounced via savePositionsToServer)
