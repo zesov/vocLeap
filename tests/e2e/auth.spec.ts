@@ -27,7 +27,8 @@ test.describe("Authentication", () => {
   }) => {
     for (const path of ["/review", "/words", "/review-history"]) {
       await page.goto(path);
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\?next=/);
+      expect(new URL(page.url()).searchParams.get("next")).toBe(path);
     }
 
     await page.goto("/dictionary");
@@ -58,11 +59,28 @@ test.describe("Authentication", () => {
 
     // The session is really gone: a protected page bounces again.
     await page.goto("/words");
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/\/login(\?|$)/);
 
     await signIn(page, email);
     await expect(page).toHaveURL(/\/review$/);
     await expect(page.getByRole("banner").getByText(email).first()).toBeVisible();
+  });
+
+  test("returns to the requested page after signing in", async ({ page }) => {
+    const email = uniqueEmail("redirect");
+    await signUp(page, email);
+    await expect(page).toHaveURL(/\/review$/);
+    await page.request.post("/api/auth/logout");
+
+    await page.goto("/words?filter=new");
+    await expect(page).toHaveURL(/\/login\?next=/);
+    expect(new URL(page.url()).searchParams.get("next")).toBe("/words?filter=new");
+
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+
+    await expect(page).toHaveURL(/\/words\?filter=new$/);
   });
 
   test("each account only sees its own vocabulary", async ({
