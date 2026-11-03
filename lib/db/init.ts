@@ -239,6 +239,22 @@ async function createSchema(): Promise<void> {
     )
   `);
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS review_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_id TEXT NOT NULL,
+      queue_type TEXT NOT NULL CHECK (queue_type IN ('due','new')),
+      queue_word_ids TEXT NOT NULL,
+      current_index INTEGER NOT NULL DEFAULT 0,
+      stats_json TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, device_id, queue_type)
+    )
+  `);
+
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_review_sessions_user ON review_sessions(user_id)`);
+
   await db.exec(
     `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`
   );
