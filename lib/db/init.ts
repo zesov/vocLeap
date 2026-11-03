@@ -18,12 +18,17 @@ export interface PreparedStatement {
 
 export interface DatabaseAdapter {
   exec(sql: string): Promise<void>;
+  batch(statements: string[]): Promise<void>;
   prepare(sql: string): PreparedStatement;
   close(): Promise<void>;
 }
 
 class LocalStatement implements PreparedStatement {
-  constructor(private stmt: Database.Statement) {}
+  private stmt: Database.Statement;
+
+  constructor(stmt: Database.Statement) {
+    this.stmt = stmt;
+  }
 
   async run(...params: unknown[]): Promise<ResultMeta> {
     const info = this.stmt.run(...params);
@@ -59,6 +64,15 @@ class LocalAdapter implements DatabaseAdapter {
     this.db.exec(sql);
   }
 
+  async batch(statements: string[]): Promise<void> {
+    const runAll = this.db.transaction(() => {
+      for (const sql of statements) {
+        this.db.exec(sql);
+      }
+    });
+    runAll();
+  }
+
   prepare(sql: string): PreparedStatement {
     return new LocalStatement(this.db.prepare(sql));
   }
@@ -69,10 +83,13 @@ class LocalAdapter implements DatabaseAdapter {
 }
 
 class TursoStatement implements PreparedStatement {
-  constructor(
-    private client: ReturnType<typeof createClient>,
-    private sql: string
-  ) {}
+  private client: ReturnType<typeof createClient>;
+  private sql: string;
+
+  constructor(client: ReturnType<typeof createClient>, sql: string) {
+    this.client = client;
+    this.sql = sql;
+  }
 
   async run(...params: unknown[]): Promise<ResultMeta> {
     const result = await this.client.execute({
@@ -118,6 +135,10 @@ class TursoAdapter implements DatabaseAdapter {
 
   async exec(sql: string): Promise<void> {
     await this.client.execute({ sql });
+  }
+
+  async batch(statements: string[]): Promise<void> {
+    await this.client.batch(statements, "write");
   }
 
   prepare(sql: string): PreparedStatement {
