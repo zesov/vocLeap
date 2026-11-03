@@ -1,0 +1,105 @@
+import { test, expect } from "@playwright/test";
+
+const PASSWORD = "password123";
+
+function uniqueEmail(prefix: string): string {
+  return `${prefix}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}@test.local`;
+}
+
+async function signUp(page: import("@playwright/test").Page, email: string) {
+  await page.goto("/signup");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page).toHaveURL(/\/review$/);
+}
+
+async function addWordsViaAPI(page: import("@playwright/test").Page, words: Array<{word: string, translation: string}>) {
+  const res = await page.request.post("/api/words", {
+    data: words.map(w => ({ ...w, sourceLanguage: "en", targetLanguage: "zh-CN" }))
+  });
+  expect(res.status()).toBe(201);
+  return res.json();
+}
+
+test.describe("Review cross-device sync", () => {
+  test("progress syncs from device A to device B", async ({ browser }) => {
+    const email = uniqueEmail("sync");
+
+    // --- Device A: sign up, add words, start review ---
+    const contextA = await browser.newContext();
+    const pageA = await contextA.newPage();
+    await signUp(pageA, email);
+
+    // Add 3 words so we have a due queue
+    const words = [
+      { word: "apple", translation: "蘋果" },
+      { word: "banana", translation: "香蕉" },
+      { word: "cat", translation: "貓" },
+    ];
+    await addWordsViaAPI(pageA, words);
+
+    await pageA.goto("/review");
+    await expect(pageA.getByText("Card 1 of 3")).toBeVisible();
+
+    // Rate "Good" on first card
+    await pageA.getByRole("button", { name: /Good/ }).click();
+    await expect(pageA.getByText("Card 2 of 3")).toBeVisible();
+
+    // Give it a moment to sync
+    await pageA.waitForTimeout(1000);
+
+    // --- Device B: new browser context (simulates different device) ---
+    const contextB = await browser.newContext();
+    const pageB = await contextB.newPage();
+
+    // Sign in with same account
+    await pageB.goto("/login");
+    await pageB.getByLabel("Email").fill(email);
+    await pageB.getByLabel("Password").fill(PASSWORD);
+    await pageB.getByRole("button", { name: "Sign in" }).click();
+    await expect(pageB).toHaveURL(/\/review$/);
+
+    // Should resume at Card 2 (index 1)
+    await expect(pageB.getByText("Card 2 of 3")).toBeVisible();
+
+    await contextA.close();
+    await contextB.close();
+  });
+
+  test("due and new queues sync independently", async ({ browser }) => {
+    const email = uniqueEmail("dualqueue");
+
+    const contextA = await browser.newContext();
+    const pageA = await contextA.newPage();
+    await signUp(pageA, email);
+
+    // Add words and review some to create both due and new history
+    const words = [
+      { word: "dog", translation: "狗" },
+      { word: "elephant", translation: "大象" },
+      { word: "fox", translation: "狐狸" },
+    ];
+    await addWordsViaAPI(pageA, words);
+
+    await pageA.goto("/review");
+    await expect(pageA.getByText("Card 1 of 3")).toBeVisible();
+
+    // Review 1 card
+    await pageA.getByRole("button", { name: /Good/ }).click();
+    await expect(pageA.getByText("Card 2 of 3")).toBeVisible();
+    await pageA.waitForTimeout(1000);
+
+    const contextB = await browser.newContext();
+    const pageB = await contextB.newPage();
+    await pageB.goto("/login");
+    await pageB.getByLabel("Email").fill(email);
+    await pageB.getByLabel("Password").fill(PASSWORD);
+    await pageB.getByRole("button", { name: "Sign in" }).click();
+    await expect(pageB).toHaveURL(/\/review$/);
+    await expect(pageB.getByText("Card 2 of 3")).toBeVisible();
+
+    await contextA.close();
+    await contextB.close();
+  });
+});
