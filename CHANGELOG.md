@@ -4,6 +4,15 @@ All notable changes to risk-frontend are documented in this file.
 
 ## Unreleased
 
+## [2026-11-04] Review Queue Semantics
+- `GET /api/reviews?action=all` now applies the same filter as `review`/`new` (due words only, or never-reviewed words only) instead of returning every word
+- The review page always loads the queue for the current mode and only uses synced positions to restore ordering, so completed cards are no longer re-queued on reload
+- Resume position is tracked by the reviewed count, keeping "Card X of Y" correct when reviewed words drop out of the queue
+- Synced positions are rebased to the current queue, keeping the `review-state` payload bounded by session size
+- Clearing review state now also clears the session meta, and finishing a session resets progress instead of inheriting a stale count
+- Fixed merged positions ignoring position `0`
+- Added E2E coverage for queue filtering, mid-session reload, and finished sessions
+
 ## [2026-11-04] Sign-in Navigation & Review-state Sync
 - Sign-in no longer silently fails when a browser fills credentials before React hydrates: auth inputs are uncontrolled and submission reads `FormData`, so typed values are never reset to empty
 - Successful sign-in/sign-up now performs a full navigation to `next`, guaranteeing the fresh session cookie is seen by the proxy and protected layout

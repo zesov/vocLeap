@@ -200,7 +200,8 @@ function mergeServerState(
   for (const s of serverData.states) {
     const localUpdated = localState.updatedAt;
     const serverUpdated = s.updatedAt;
-    if (!mergedPositions[s.wordId] || (serverUpdated && (!localUpdated || serverUpdated > localUpdated))) {
+    // `in` rather than a truthiness check: position 0 is a valid position.
+    if (!(s.wordId in mergedPositions) || (serverUpdated && (!localUpdated || serverUpdated > localUpdated))) {
       mergedPositions[s.wordId] = s.position;
     }
     if (serverUpdated && serverUpdated > maxUpdatedAt) {
@@ -241,39 +242,27 @@ export function ReviewSession() {
 
   const totalReviews = reviewedBeforeBatch + reviews.length;
 
-  // Initialize queue order from saved positions (localStorage or server-synced)
-  function initializeQueueFromPositions(reviewsData: any[]) {
+  // Initialize queue order from saved positions (localStorage or server-synced).
+  // The queue itself comes from the API (`review` = due, `new` = never
+  // reviewed), so saved positions can only reorder it — never add words back.
+  function initializeQueueFromPositions(reviewsData: Review[]) {
     const saved = readPositionState(mode);
-    console.log("[initQueue] mode:", mode, "saved:", saved, "reviewsData:", reviewsData.map(r => ({id: r.wordId, word: r.word?.word})));
-    if (!saved || !saved.positions || Object.keys(saved.positions).length === 0) {
+    if (!saved || Object.keys(saved.positions).length === 0) {
       return false;
     }
 
-    // Build ordered word IDs from positions (sort by position)
-    const wordIdsWithPositions = Object.entries(saved.positions)
-      .map(([wordId, position]) => ({ wordId: Number(wordId), position }))
-      .sort((a, b) => a.position - b.position)
-      .map(w => w.wordId);
-
-    if (wordIdsWithPositions.length === 0) return false;
-
-    // Reorder reviews to match saved positions
-    const reviewMap = new Map(reviewsData.map((r) => [r.wordId, r]));
-    const orderedReviews = wordIdsWithPositions
-      .map((id) => reviewMap.get(id))
-      .filter((r): r is any => r !== undefined);
-    const missingReviews = reviewsData.filter(
-      (r) => !wordIdsWithPositions.includes(r.wordId)
+    const withPosition = reviewsData
+      .filter((r) => saved.positions[r.wordId] !== undefined)
+      .sort((a, b) => saved.positions[a.wordId] - saved.positions[b.wordId]);
+    const withoutPosition = reviewsData.filter(
+      (r) => saved.positions[r.wordId] === undefined
     );
-    const newReviews = [...orderedReviews, ...missingReviews];
 
-    // Use saved session progress (currentIndex and reviewedCount)
-    const currentIndex = saved.currentIndex ?? 0;
-    const reviewedCount = saved.reviewedCount ?? 0;
-
-    setReviews(newReviews);
-    setCurrentIndex(currentIndex);
-    setReviewedBeforeBatch(reviewedCount);
+    setReviews([...withPosition, ...withoutPosition]);
+    // Words already reviewed in this session are gone from the fresh queue, so
+    // the next card is always the first remaining one.
+    setCurrentIndex(0);
+    setReviewedBeforeBatch(Math.max(0, saved.reviewedCount ?? 0));
 
     return true;
   }
@@ -319,6 +308,29 @@ export function ReviewSession() {
       syncPositionsRef.current[mode] = timeout;
     },
     [synced, deviceId]
+  );
+
+  // Drop the synced session state for this device. Called when a queue is
+  // finished or empty so the next session starts from zero progress instead of
+  // inheriting a stale reviewed count.
+  const clearServerState = useCallback(
+    async (mode: Mode) => {
+      const pendingSync = syncPositionsRef.current[mode];
+      if (pendingSync) clearTimeout(pendingSync);
+      const pendingLocal = localStorageDebounceRef.current[mode];
+      if (pendingLocal) clearTimeout(pendingLocal);
+      if (!deviceId) return;
+
+      try {
+        await fetch(
+          `/api/review-state?mode=${mode}&deviceId=${encodeURIComponent(deviceId)}`,
+          { method: "DELETE" }
+        );
+      } catch (e) {
+        console.error("Sync clear failed:", e);
+      }
+    },
+    [deviceId]
   );
 
   // Load from server on mount (fetch per-word positions for cross-device sync)
@@ -373,18 +385,10 @@ export function ReviewSession() {
         setLoading(false);
         return;
       }
-      const authData = await authRes.json();
-      
-      // Use 'all' action if we have synced positions to get all reviews (including reviewed ones)
-      const savedPositions = readPositionState(mode);
-      const hasSyncedPositions = savedPositions && savedPositions.positions && Object.keys(savedPositions.positions).length > 0;
-      
-      // Use 'all' action if we have synced positions to get all reviews (including reviewed ones)
-      const action = hasSyncedPositions ? "all" : mode;
-      const reviewsParams = new URLSearchParams({ action, limit: "50" });
-      if (hasSyncedPositions && mode === "new") {
-        reviewsParams.set("mode", "new");
-      }
+      // The queue always comes from the mode endpoint so it only contains
+      // words that are actually due (`review`) or never reviewed (`new`).
+      // Saved positions are applied afterwards, purely to restore ordering.
+      const reviewsParams = new URLSearchParams({ action: mode, limit: "50" });
 
       const [reviewsRes, statsRes] = await Promise.all([
         fetch(`/api/reviews?${reviewsParams}`),
@@ -412,17 +416,17 @@ export function ReviewSession() {
         return;
       }
 
-      // Try to restore from saved positions first (server-synced)
+      // Try to restore queue ordering from saved positions (server-synced)
+      setStats(statsData);
       const restored = initializeQueueFromPositions(reviewsData);
 
       if (!restored) {
         // No synced state - use API order and try legacy restore
         setReviews(reviewsData);
-        setStats(statsData);
 
         // Initialize positions from API order for future sync
         const initialPositions: Record<number, number> = {};
-        reviewsData.forEach((r: any, idx: number) => {
+        reviewsData.forEach((r: Review, idx: number) => {
           initialPositions[r.wordId] = idx;
         });
         writePositionState(mode, { 
@@ -434,16 +438,13 @@ export function ReviewSession() {
 
         const saved = readSavedPosition(mode);
         const savedIndex = saved
-          ? reviewsData.findIndex((review: { wordId: number }) => review.wordId === saved.wordId)
+          ? reviewsData.findIndex((review: Review) => review.wordId === saved.wordId)
           : -1;
         const restoredOffset =
           saved && savedIndex >= 0 ? Math.max(0, saved.position - savedIndex - 1) : 0;
 
         setCurrentIndex(saved && savedIndex >= 0 ? savedIndex : 0);
         setReviewedBeforeBatch(restoredOffset);
-      } else {
-        // Use API stats for display (due/total/newWords)
-        setStats(statsData);
       }
 
       setShowAnswer(false);
@@ -451,8 +452,10 @@ export function ReviewSession() {
       setLoadedMode(mode);
 
       if (reviewsData.length === 0) {
+        setReviewedBeforeBatch(0);
         clearSavedPosition(mode);
         clearPositionState(mode);
+        void clearServerState(mode);
       }
     } catch (error) {
       console.error("Failed to fetch reviews:", error);
@@ -501,26 +504,24 @@ export function ReviewSession() {
     });
   }, [loading, sessionComplete, loadedMode, mode, reviews, currentIndex, reviewedBeforeBatch]);
 
-  // Save per-word positions to localStorage (debounced) and sync to server
+  // Save per-word positions to localStorage (debounced) and sync to server.
+  // Only the current queue is stored, and positions are rebased to 0..n-1, so
+  // the synced payload stays bounded by the queue size instead of growing with
+  // every word the user has ever seen.
   const savePositionState = useCallback(() => {
-    const saved = readPositionState(mode);
-    const existingPositions = saved?.positions || {};
-    
-    // Build positions: keep existing positions for known words, assign new positions for new words
-    const positions: Record<number, number> = { ...existingPositions };
-    let maxPos = Math.max(...Object.values(existingPositions), -1);
-    
-    reviews.forEach((r) => {
-      if (!(r.wordId in positions)) {
-        maxPos += 1;
-        positions[r.wordId] = maxPos;
-      }
+    const positions: Record<number, number> = {};
+    reviews.forEach((review, idx) => {
+      positions[review.wordId] = idx;
     });
+
+    // Words already rated in this session drop out of the API queue, so resume
+    // position is tracked by the reviewed count, not by an array index.
+    const reviewedCount = reviewedBeforeBatch + currentIndex;
 
     const state: PositionState = {
       positions,
-      currentIndex,
-      reviewedCount: reviewedBeforeBatch,
+      currentIndex: 0,
+      reviewedCount,
       updatedAt: new Date().toISOString(),
     };
 
@@ -534,7 +535,7 @@ export function ReviewSession() {
 
     // Server sync (already debounced via savePositionsToServer)
     // Pass current meta directly to avoid race condition with localStorage debounce
-    savePositionsToServer(mode, positions, currentIndex, reviewedBeforeBatch);
+    savePositionsToServer(mode, positions, 0, reviewedCount);
   }, [mode, reviews, currentIndex, reviewedBeforeBatch, savePositionsToServer]);
 
   // Save when currentIndex changes (debounced via savePositionsToServer)
@@ -584,8 +585,10 @@ export function ReviewSession() {
         setShowAnswer(false);
       } else {
         setSessionComplete(true);
+        setReviewedBeforeBatch(0);
         clearSavedPosition(mode);
         clearPositionState(mode);
+        void clearServerState(mode);
       }
     } catch (error) {
       console.error("Review submission error:", error);
@@ -593,7 +596,7 @@ export function ReviewSession() {
     } finally {
       setPendingRating(null);
     }
-  }, [reviews, currentIndex, pendingRating, mode]);
+  }, [reviews, currentIndex, pendingRating, mode, clearServerState]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

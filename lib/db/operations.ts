@@ -565,6 +565,17 @@ export async function clearUserReviewState(
   await stmt.run(userId, deviceId, mode);
 }
 
+export async function clearUserReviewMeta(
+  userId: number,
+  deviceId: string,
+  mode: "review" | "new"
+): Promise<void> {
+  const stmt = db.prepare(`
+    DELETE FROM user_review_meta WHERE user_id = ? AND device_id = ? AND mode = ?
+  `);
+  await stmt.run(userId, deviceId, mode);
+}
+
 export async function getUserReviewMeta(
   userId: number,
   deviceId: string,
