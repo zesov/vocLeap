@@ -34,6 +34,12 @@ export async function GET(request: NextRequest) {
       if (action === "all") {
         const limit = parseInt(searchParams.get("limit") || "200", 10);
         const includeNew = searchParams.get("mode") === "new";
+        // `all` keeps the same queue semantics as `review`/`new`: due words for
+        // review, never-reviewed words for new. It exists so the client can
+        // restore its saved ordering without loading words outside the queue.
+        const queueFilter = includeNew
+          ? "AND r.word_id IS NULL"
+          : "AND r.word_id IS NOT NULL AND r.next_review_date <= datetime('now')";
         const stmt = db.prepare(`
           SELECT w.id AS word_id, w.word, w.translation, w.definitions, w.examples,
                  w.phonetic, w.audio_url, w.source_language, w.target_language,
@@ -44,7 +50,7 @@ export async function GET(request: NextRequest) {
           FROM words w
           LEFT JOIN reviews r ON r.word_id = w.id
           WHERE w.user_id = ?
-            ${includeNew ? "" : "AND r.word_id IS NOT NULL"}
+            ${queueFilter}
           ORDER BY ${includeNew ? "w.created_at DESC" : "r.next_review_date ASC"}
           LIMIT ?
         `);

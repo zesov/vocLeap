@@ -30,14 +30,24 @@ async function addWordsViaAPI(page: import("@playwright/test").Page, words: Arra
   return res.json();
 }
 
-async function waitForSync(page: import("@playwright/test").Page, mode: "review" | "new" = "review") {
-  // Wait for sync to complete by polling the API
-  for (let i = 0; i < 30; i++) {
+async function waitForSync(
+  page: import("@playwright/test").Page,
+  mode: "review" | "new" = "review",
+  expectedReviewedCount?: number
+) {
+  // Wait for the debounced sync to land. Checking `states` alone is not enough:
+  // the initial queue write also produces states, so wait for the saved session
+  // progress when the caller expects a specific value.
+  for (let i = 0; i < 50; i++) {
     await page.waitForTimeout(100);
     const res = await page.request.get(`/api/review-state?mode=${mode}&allDevices=true`);
     if (res.ok()) {
       const data = await res.json();
-      if (data.states && data.states.length > 0) {
+      const hasStates = data.states && data.states.length > 0;
+      const hasProgress =
+        expectedReviewedCount === undefined ||
+        data.meta?.reviewedCount === expectedReviewedCount;
+      if (hasStates && hasProgress) {
         console.log(`[waitForSync] mode=${mode} got states:`, data.states);
         return;
       }
@@ -85,7 +95,7 @@ test.describe("Review cross-device sync", () => {
     await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
 
     // Wait for sync to complete
-    await waitForSync(pageA, "new");
+    await waitForSync(pageA, "new", 1);
 
     // Debug: check what the API returns for this user
     const apiRes = await pageA.request.get("/api/review-state?mode=new&allDevices=true");
@@ -135,7 +145,7 @@ test.describe("Review cross-device sync", () => {
     await expect(pageA.getByRole("button", { name: /Good/ })).toBeVisible({ timeout: 5000 });
     await pageA.getByRole("button", { name: /Good/ }).click();
     await expect(pageA.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
-    await waitForSync(pageA, "new");
+    await waitForSync(pageA, "new", 1);
 
     // Test that due queue state is synced
     const contextB = await browser.newContext();

@@ -3,6 +3,7 @@ import {
   getUserReviewState, 
   upsertUserReviewStates,
   clearUserReviewState,
+  clearUserReviewMeta,
   getUserReviewMeta,
   upsertUserReviewMeta
 } from "@/lib/db/operations";
@@ -155,6 +156,7 @@ export async function DELETE(request: NextRequest) {
       }
 
       await clearUserReviewState(user.id, deviceId, mode as "review" | "new");
+      await clearUserReviewMeta(user.id, deviceId, mode as "review" | "new");
 
       return NextResponse.json({ ok: true });
     } catch (e) {
