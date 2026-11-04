@@ -4,6 +4,14 @@ All notable changes to risk-frontend are documented in this file.
 
 ## Unreleased
 
+### Android (Tauri v2)
+- Added Tauri v2 project (`src-tauri/`) with Android target (`aarch64-linux-android`)
+- Configured `tauri.conf.json` (`identifier: com.vocleap.app`, `frontendDist: ../frontend-dist`)
+- Set up `.cargo/config.toml` with NDK linker (`aarch64-linux-android34-clang`)
+- Added release APK signing via `cargo-apk` (debug keystore, `keystore_password = "android"`)
+- Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
+- `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
+
 ## [2026-11-04] Review Queue Semantics
 - `GET /api/reviews?action=all` now applies the same filter as `review`/`new` (due words only, or never-reviewed words only) instead of returning every word
 - The review page always loads the queue for the current mode and only uses synced positions to restore ordering, so completed cards are no longer re-queued on reload
