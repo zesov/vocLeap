@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -31,19 +30,22 @@ const COPY = {
 } as const;
 
 export function AuthForm({ mode, next }: AuthFormProps) {
-  const router = useRouter();
   const copy = COPY[mode];
   const switchHref = `${copy.switchHref}?next=${encodeURIComponent(next)}`;
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
     setSubmitting(true);
+
+    // Read the values straight from the form instead of React state. Inputs are
+    // uncontrolled so anything typed before hydration finishes still counts.
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") ?? "");
+    const password = String(formData.get("password") ?? "");
 
     try {
       const response = await fetch(`/api/auth/${mode}`, {
@@ -61,8 +63,10 @@ export function AuthForm({ mode, next }: AuthFormProps) {
         return;
       }
 
-      router.push(next);
-      router.refresh();
+      // Full navigation rather than a client-side push: the session cookie was
+      // just set by this response, and a hard load guarantees the proxy and the
+      // protected layout both see it.
+      window.location.assign(next);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -71,22 +75,20 @@ export function AuthForm({ mode, next }: AuthFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} method="post" className="space-y-4">
       <Input
         label="Email"
+        name="email"
         type="email"
         autoComplete="email"
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
         required
       />
 
       <Input
         label="Password"
+        name="password"
         type="password"
         autoComplete={mode === "login" ? "current-password" : "new-password"}
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
         helperText={mode === "signup" ? "At least 8 characters." : undefined}
         required
       />

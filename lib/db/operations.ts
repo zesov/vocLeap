@@ -520,19 +520,38 @@ export async function upsertUserReviewStates(
   states: UserReviewState[]
 ): Promise<void> {
   if (states.length === 0) return;
-  const stmt = db.prepare(`
-    INSERT INTO user_review_state (user_id, device_id, mode, word_id, position, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(user_id, device_id, mode, word_id) DO UPDATE SET
-      position = excluded.position,
-      updated_at = excluded.updated_at
-  `);
-  // Use transaction for batch insert - ONE db call instead of N
-  db.transaction(() => {
-    for (const state of states) {
-      stmt.run(state.userId, state.deviceId, state.mode, state.wordId, state.position, state.updatedAt);
+
+  // Batch into a single multi-row UPSERT to avoid one network round-trip per
+  // row when running against a remote Turso database. SQLite's default limit is
+  // 999 bound parameters; we bind 6 per row, so chunk at 100 rows (600 params).
+  const CHUNK = 100;
+  const ROW = "(?, ?, ?, ?, ?, ?)";
+
+  for (let start = 0; start < states.length; start += CHUNK) {
+    const chunk = states.slice(start, start + CHUNK);
+    const valuesSql = Array.from({ length: chunk.length }, () => ROW).join(", ");
+    const stmt = db.prepare(`
+      INSERT INTO user_review_state (user_id, device_id, mode, word_id, position, updated_at)
+      VALUES ${valuesSql}
+      ON CONFLICT(user_id, device_id, mode, word_id) DO UPDATE SET
+        position = excluded.position,
+        updated_at = excluded.updated_at
+    `);
+
+    const params: unknown[] = [];
+    for (const state of chunk) {
+      params.push(
+        state.userId,
+        state.deviceId,
+        state.mode,
+        state.wordId,
+        state.position,
+        state.updatedAt
+      );
     }
-  });
+
+    await stmt.run(...params);
+  }
 }
 
 export async function clearUserReviewState(

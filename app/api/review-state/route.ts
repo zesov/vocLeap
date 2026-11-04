@@ -6,6 +6,7 @@ import {
   getUserReviewMeta,
   upsertUserReviewMeta
 } from "@/lib/db/operations";
+import { initDatabase } from "@/lib/db/init";
 import { withUser } from "@/lib/auth/guard";
 
 export async function GET(request: NextRequest) {
@@ -93,6 +94,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  await initDatabase();
   return withUser(async (user) => {
     try {
       const body = await request.json();
@@ -138,6 +140,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  await initDatabase();
   return withUser(async (user) => {
     try {
       const { searchParams } = new URL(request.url);
