@@ -63,21 +63,6 @@ export default function HomePage() {
           <p className="text-gray-500 dark:text-gray-400 text-sm">
             Works offline as a PWA • Your vocabulary syncs across devices
           </p>
-
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <Link
-              href="/signup"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-            >
-              Create account
-            </Link>
-            <Link
-              href="/login"
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-            >
-              Sign in
-            </Link>
-          </div>
         </div>
       </main>
     </div>
