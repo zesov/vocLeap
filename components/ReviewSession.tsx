@@ -78,7 +78,12 @@ function getOrCreateDeviceId(): string {
   if (typeof window === "undefined") return "";
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
-    deviceId = crypto.randomUUID();
+    // Fallback for browsers without crypto.randomUUID()
+    deviceId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
     localStorage.setItem(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;
@@ -360,7 +365,17 @@ export function ReviewSession() {
   const fetchReviews = async () => {
     setLoading(true);
     try {
-      // Check if we have synced positions for this mode
+      // Check if user is authenticated before fetching reviews
+      const authRes = await fetch("/api/auth/me");
+      if (!authRes.ok) {
+        // User is not authenticated - don't try to load reviews
+        // Redirect to login or just stop here
+        setLoading(false);
+        return;
+      }
+      const authData = await authRes.json();
+      
+      // Use 'all' action if we have synced positions to get all reviews (including reviewed ones)
       const savedPositions = readPositionState(mode);
       const hasSyncedPositions = savedPositions && savedPositions.positions && Object.keys(savedPositions.positions).length > 0;
       
@@ -529,6 +544,14 @@ export function ReviewSession() {
   }, [currentIndex, reviewedBeforeBatch, reviews, loading, sessionComplete, synced, savePositionState]);
 
   const handleRate = useCallback(async (rating: Rating) => {
+    // Check if user is authenticated before submitting review
+    const authRes = await fetch("/api/auth/me");
+    if (!authRes.ok) {
+      console.error("Review submission error: Not authenticated");
+      alert("Please log in to submit reviews.");
+      return;
+    }
+
     const currentReview = reviews[currentIndex];
     if (!currentReview || pendingRating) return;
 

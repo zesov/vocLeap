@@ -138,6 +138,8 @@ test.describe("Authentication", () => {
     await signUp(page, email);
     await expect(page).toHaveURL(/\/review$/);
 
+    // Signed-in visitors are redirected away from /signup, so sign out first.
+    await page.request.post("/api/auth/logout");
     await signUp(page, email);
 
     await expect(page.getByText("Email already registered")).toBeVisible();

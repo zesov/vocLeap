@@ -4,6 +4,15 @@ All notable changes to risk-frontend are documented in this file.
 
 ## Unreleased
 
+## [2026-11-04] Sign-in Navigation & Review-state Sync
+- Sign-in no longer silently fails when a browser fills credentials before React hydrates: auth inputs are uncontrolled and submission reads `FormData`, so typed values are never reset to empty
+- Successful sign-in/sign-up now performs a full navigation to `next`, guaranteeing the fresh session cookie is seen by the proxy and protected layout
+- Signed-in visitors to `/login` or `/signup` are redirected to `next` (default `/review`) instead of being shown the form again
+- The auth form falls back to a POST of the current URL before hydration, so credentials never end up in the query string
+- `POST /api/review-state` batches positions into one multi-row UPSERT: a 50-word sync against Turso drops from ~5.7s to ~200ms
+- Review session checks `/api/auth/me` before fetching and falls back to a UUID v4 generator when `crypto.randomUUID()` is unavailable
+- Skipped the CSRF origin check in development and removed a duplicated `initDatabase` import in the review-state route
+
 ## [2026-11-03] Sign-in Redirect
 - Signed-out visits to `/review`, `/review-history`, or `/words` now redirect to `/login?next=<path+query>`, and signing in returns to the requested page
 - Added `proxy.ts` as an optimistic auth gate; the protected layout still validates the session server-side
