@@ -12,6 +12,12 @@ All notable changes to risk-frontend are documented in this file.
 - Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
 - `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
 
+## [2026-11-05] Review Interval Preview
+- Rating buttons now show the interval each rating would schedule, calculated from the card's current SM-2 state before rating
+- The card footer now shows `Last interval` instead of the misleading `Next review in`
+- Fixed `formatInterval()` pluralisation (`1 week`, `1 month`, `1 year`)
+- Review E2E coverage still passes
+
 ## [2026-11-05] Review-state Payload & Request Dedupe
 - `GET /api/review-state?allDevices=true` now returns the latest state per word across devices instead of every row; a real account dropped from 1,950 to 297 review states (~220 KB → ~34 KB)
 - Cross-device session meta is fetched in one query instead of one query per device
