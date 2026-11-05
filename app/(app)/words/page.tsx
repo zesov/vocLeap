@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import NavBar from "@/components/NavBar";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
 
 const ITEMS_PER_PAGE = 30;
 
@@ -260,18 +259,61 @@ export default function WordsPage() {
             <p className="text-gray-600 dark:text-gray-400">Your saved vocabulary</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={handleImportClick} disabled={importing}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button
+              onClick={handleImportClick}
+              disabled={importing}
+              className="w-full sm:w-auto"
+            >
               {importing ? "Importing..." : "Import Words"}
             </Button>
-            <div className="w-40">
-              <Select
+
+            <div className="relative w-full sm:w-44">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 dark:text-gray-500">
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m3 16 4 4 4-4" />
+                  <path d="M7 20V4" />
+                  <path d="m21 8-4-4-4 4" />
+                  <path d="M17 4v16" />
+                </svg>
+              </span>
+              <select
                 aria-label="Sort words"
                 value={sort}
                 onChange={(e) => handleSortChange(e.target.value as SortOption)}
-                options={SORT_OPTIONS}
-              />
+                className="h-10 w-full cursor-pointer appearance-none rounded-lg border border-gray-300 bg-white pl-9 pr-9 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 dark:text-gray-500">
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </span>
             </div>
+
             <input
               ref={fileInputRef}
               type="file"
