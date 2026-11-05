@@ -19,6 +19,7 @@ All notable changes to risk-frontend are documented in this file.
 - `GET /api/words` accepts `sort=date_desc|date_asc|alpha_asc|alpha_desc` (default `date_desc`) and falls back safely for unknown values
 - Words page has a Sort by control (Newest first, Oldest first, A–Z, Z–A); changing it resets the paginated list
 - Refined the Sort by dropdown: 40px height aligned with Import Words, sort icon, custom chevron, and full-width stacking on mobile
+- Replaced the native `<select>` so the options popup is exactly as wide as the trigger on mobile; the listbox also supports arrow keys, Enter, Escape, Home/End, and click-outside dismissal
 - Added E2E coverage for history paging and words sorting
 
 ## [2026-11-05] Review Interval Preview
