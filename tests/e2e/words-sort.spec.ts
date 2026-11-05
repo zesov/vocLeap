@@ -99,14 +99,34 @@ test("words page sorts across pages while scrolling", async ({ page }) => {
   }));
   await addWords(page, words);
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/words");
   await expect(page.getByRole("heading", { name: "word-35" })).toBeVisible({
     timeout: 10000,
   });
 
-  await page.getByLabel("Sort words").selectOption("alpha_asc");
+  const sortTrigger = page.getByRole("button", { name: /Sort words/ });
+  await sortTrigger.click();
+  const sortList = page.getByRole("listbox");
+  await expect(sortList).toBeVisible();
+
+  // The popup must never be wider than the trigger on mobile.
+  const triggerBox = await sortTrigger.boundingBox();
+  const listBox = await sortList.boundingBox();
+  expect(triggerBox).not.toBeNull();
+  expect(listBox).not.toBeNull();
+  expect(Math.abs(listBox!.width - triggerBox!.width)).toBeLessThan(1);
+
+  await page.getByRole("option", { name: "A–Z", exact: true }).click();
   await expect(page.getByRole("heading", { name: "word-01" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "word-35" })).toHaveCount(0);
+
+  // Keyboard: Enter opens, Escape closes without changing the sort.
+  await sortTrigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(sortList).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sortList).toHaveCount(0);
 
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect(page.getByRole("heading", { name: "word-35" })).toBeVisible({
