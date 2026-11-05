@@ -24,6 +24,17 @@ function isSortOption(value: unknown): value is SortOption {
   );
 }
 
+/**
+ * Dictionary phonetics come in two shapes: bare transcriptions from Google
+ * Translate ("həˈloʊ") and already-delimited/Wiktionary strings that include
+ * slashes or labels. Only wrap the bare form so we never double the slashes.
+ */
+function formatPhonetic(phonetic: string): string {
+  const trimmed = phonetic.trim();
+  if (!trimmed) return "";
+  return trimmed.includes("/") ? trimmed : `/${trimmed}/`;
+}
+
 export default function WordsPage() {
   const [words, setWords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -327,6 +338,11 @@ export default function WordsPage() {
                 <Card key={word.id} variant="outlined" className="hover:border-blue-300 transition-colors">
                   <CardContent className="pt-6">
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">{word.word}</h3>
+                    {word.phonetic && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {formatPhonetic(word.phonetic)}
+                      </p>
+                    )}
                     <p className="text-blue-600 dark:text-blue-400 font-medium">{word.translation}</p>
                     {word.definitions && word.definitions.length > 0 && (
                       <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{word.definitions.slice(0, 2).join(", ")}</p>

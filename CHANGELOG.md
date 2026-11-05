@@ -12,6 +12,12 @@ All notable changes to risk-frontend are documented in this file.
 - Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
 - `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
 
+## [2026-11-05] Words Phonetic Display
+- Words page cards now show each saved word's phonetic under the word, above the translation
+- Bare Google Translate phonetics get wrapped as `/…/`; already-delimited Wiktionary phonetics are shown as-is
+- Words without a phonetic render no extra line
+- Added E2E coverage for phonetic display
+
 ## [2026-11-05] Review History Pagination & Words Sorting
 - `GET /api/reviews?action=history` now accepts `limit`/`offset` and returns `{ history, total, limit, offset, hasMore }` instead of every record
 - Review history page loads 30 entries at a time as the table scrolls, with a retry state on failure
