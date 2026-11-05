@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { parseRating, sm2Algorithm } from "@/lib/srs/sm2";
 
 type Rating = "again" | "hard" | "good" | "easy";
 type Mode = "review" | "new";
@@ -115,6 +116,26 @@ interface Stats {
   due: number;
   total: number;
   newWords: number;
+}
+
+/**
+ * Preview the interval each rating would schedule, before the user rates.
+ * Uses the card's stored SM-2 state, so it matches what POST /api/reviews will
+ * calculate.
+ */
+function getNextIntervals(review: Review): Record<Rating, number> {
+  const ratings: Rating[] = ["again", "hard", "good", "easy"];
+  return Object.fromEntries(
+    ratings.map((rating) => [
+      rating,
+      sm2Algorithm({
+        easeFactor: review.easeFactor,
+        interval: review.interval,
+        repetitions: review.repetitions,
+        rating: parseRating(rating),
+      }).interval,
+    ])
+  ) as Record<Rating, number>;
 }
 
 interface PositionState {
@@ -619,9 +640,16 @@ export function ReviewSession() {
     if (interval < 1) return "< 1 day";
     if (interval === 1) return "1 day";
     if (interval < 7) return `${interval} days`;
-    if (interval < 30) return `${Math.round(interval / 7)} weeks`;
-    if (interval < 365) return `${Math.round(interval / 30)} months`;
-    return `${Math.round(interval / 365)} years`;
+    if (interval < 30) {
+      const weeks = Math.round(interval / 7);
+      return `${weeks} week${weeks === 1 ? "" : "s"}`;
+    }
+    if (interval < 365) {
+      const months = Math.round(interval / 30);
+      return `${months} month${months === 1 ? "" : "s"}`;
+    }
+    const years = Math.round(interval / 365);
+    return `${years} year${years === 1 ? "" : "s"}`;
   };
 
   const handleCardToggle = (event: MouseEvent<HTMLDivElement>) => {
@@ -689,6 +717,7 @@ export function ReviewSession() {
 
   const currentPosition = reviewedBeforeBatch + currentIndex + 1;
   const progress = totalReviews > 0 ? (currentPosition / totalReviews) * 100 : 0;
+  const nextIntervals = getNextIntervals(currentReview);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -798,7 +827,7 @@ export function ReviewSession() {
 
                 <div className="pt-4">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                    Next review in: <span className="font-medium">{formatInterval(currentReview.interval)}</span>
+                    Last interval: <span className="font-medium">{formatInterval(currentReview.interval)}</span>
                     {currentReview.repetitions > 0 && (
                       <> • Repetition #{currentReview.repetitions} • EF: {currentReview.easeFactor.toFixed(2)}</>
                     )}
@@ -811,10 +840,13 @@ export function ReviewSession() {
                         onClick={() => handleRate(rating)}
                         loading={pendingRating === rating}
                         variant="primary"
-                        className={`${RATING_CONFIG[rating].color} text-white py-3 text-sm`}
+                        className={`${RATING_CONFIG[rating].color} text-white py-2 text-sm flex-col gap-0.5`}
                         disabled={pendingRating !== null}
                       >
-                        {RATING_CONFIG[rating].label}
+                        <span>{RATING_CONFIG[rating].label}</span>
+                        <span className="text-[11px] font-normal opacity-80">
+                          {formatInterval(nextIntervals[rating])}
+                        </span>
                       </Button>
                     ))}
                   </div>
