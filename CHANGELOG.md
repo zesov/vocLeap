@@ -14,6 +14,7 @@ All notable changes to risk-frontend are documented in this file.
 
 ## [2026-11-05] Review Interval Preview
 - Rating buttons now show the interval each rating would schedule, calculated from the card's current SM-2 state before rating
+- Keep the rating-button spinner centered and the button height stable while a review is submitting
 - The card footer now shows `Last interval` instead of the misleading `Next review in`
 - Fixed `formatInterval()` pluralisation (`1 week`, `1 month`, `1 year`)
 - Review E2E coverage still passes
