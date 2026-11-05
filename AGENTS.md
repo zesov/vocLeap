@@ -46,8 +46,8 @@ Key directories:
 Important files:
 - `app/api/reviews/route.ts` — GET (`action=due|review|new|stats|history[&wordId=X]`) and POST (SM-2 review submission)
 - `app/review/page.tsx` — ReviewSession with keyboard shortcuts: Space toggles Show Answer, 1–4 rate Again/Hard/Good/Easy
-- `app/review-history/page.tsx` — full review history table (GET `/api/reviews?action=history`)
-- `app/words/page.tsx` — word list + Import Words button (triggers hidden file input, `.txt/.json/.csv`)
+- `app/(app)/review-history/page.tsx` — review history table with infinite scroll (GET `/api/reviews?action=history&limit=30&offset=N`)
+- `app/(app)/words/page.tsx` — word list + Import Words button (triggers hidden file input, `.txt/.json/.csv`) + Sort by control (`date_desc|date_asc|alpha_asc|alpha_desc`)
 - `components/NavBar.tsx` — nav items: Dictionary, Review, History, My Words; logo links to `/`
 - `lib/db/operations.ts` — `getReview()` maps snake_case DB columns to camelCase (fixes `NOT NULL constraint failed: reviews.ease_factor` on submission)
 - `lib/db/init.ts` — Dual-backend DB adapter. `DB_MODE=local` (default) uses `better-sqlite3` at `./data/vocleap.db`; `DB_MODE=turso` uses `@libsql/client` connecting to `TURSO_URL` (defaults to `libsql://your-database-your-org.turso.io`, auth via `TURSO_AUTH_TOKEN`). All DB operations are async through a unified `DatabaseAdapter` interface.
@@ -55,7 +55,7 @@ Important files:
 
 Notes:
 - SQLite DB path defaults to `./data/vocleap.db` (gitignored). `lib/db/init.ts` runs on import and creates tables.
-- Review history API: `GET /api/reviews?action=history` returns all history joined with word/translation; `&wordId=X` filters to one word.
+- Review history API: `GET /api/reviews?action=history&limit=30&offset=N` returns a page in `{ history, total, limit, offset, hasMore }`; `&wordId=X` still returns one word's full history.
 - The `vocLeap/` vs `vocleap/` path case: git root is the parent folder; the project lives in `vocLeap/`. File paths inside the project use `vocleap/` (lowercase) consistently.
 - E2E tests live in `tests/e2e/` (Playwright), baseURL `http://localhost:3001` in `playwright.config.ts`.
 

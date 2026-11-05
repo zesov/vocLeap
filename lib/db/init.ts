@@ -283,6 +283,9 @@ async function createSchema(): Promise<void> {
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_words_word ON words(word)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_reviews_next_review ON reviews(next_review_date)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_review_history_word ON review_history(word_id)`);
+  await db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_review_history_reviewed ON review_history(reviewed_at DESC, id DESC)`
+  );
 
   // A database that has not run `migrate:multiuser` yet still has the old
   // `words` table without `user_id`. Skip the index instead of failing startup:

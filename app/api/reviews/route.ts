@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getDueReviews, getReview, createOrUpdateReview, addReviewHistory,
-  getReviewStats, getReviewHistory, getAllReviewHistory, Review, getNewWords,
+  getReviewStats, getReviewHistory, getReviewHistoryPage, Review, getNewWords,
   assertWordOwned,
 } from "@/lib/db/operations";
 import { sm2Algorithm, parseRating, getInitialSM2State, formatDateForDB } from "@/lib/srs/sm2";
@@ -108,7 +108,29 @@ export async function GET(request: NextRequest) {
         );
       }
       if (action === "history") {
-        return NextResponse.json(await getAllReviewHistory(user.id));
+        const limitParam = Number.parseInt(searchParams.get("limit") || "30", 10);
+        const offsetParam = Number.parseInt(searchParams.get("offset") || "0", 10);
+        const limit = Math.max(
+          1,
+          Math.min(Number.isFinite(limitParam) ? limitParam : 30, 100)
+        );
+        const offset = Math.max(
+          Number.isFinite(offsetParam) ? offsetParam : 0,
+          0
+        );
+        const { entries, total } = await getReviewHistoryPage(
+          user.id,
+          limit,
+          offset
+        );
+
+        return NextResponse.json({
+          history: entries,
+          total,
+          limit,
+          offset,
+          hasMore: offset + limit < total,
+        });
       }
       if (wordId) {
         const review = await getReview(user.id, parseInt(wordId, 10));
