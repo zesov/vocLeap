@@ -4,8 +4,25 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import NavBar from "@/components/NavBar";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 
 const ITEMS_PER_PAGE = 30;
+
+type SortOption = "date_desc" | "date_asc" | "alpha_asc" | "alpha_desc";
+
+const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
+  { value: "date_desc", label: "Newest first" },
+  { value: "date_asc", label: "Oldest first" },
+  { value: "alpha_asc", label: "A–Z" },
+  { value: "alpha_desc", label: "Z–A" },
+];
+
+function isSortOption(value: unknown): value is SortOption {
+  return (
+    typeof value === "string" &&
+    SORT_OPTIONS.some((option) => option.value === value)
+  );
+}
 
 export default function WordsPage() {
   const [words, setWords] = useState<any[]>([]);
@@ -13,42 +30,70 @@ export default function WordsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [sort, setSort] = useState<SortOption>("date_desc");
+  const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; failed: number; total: number; message: string } | null>(null);
   const observerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchWords = async (offset: number = 0, append: boolean = false) => {
-    setLoadingMore(append && !loading);
-    
-    try {
-      const res = await fetch(`/api/words?limit=${ITEMS_PER_PAGE}&offset=${offset}`);
-      const data = await res.json();
-      
+  const fetchWords = useCallback(
+    async (
+      nextOffset: number = 0,
+      append: boolean = false,
+      nextSort: SortOption = "date_desc"
+    ) => {
       if (append) {
-        setWords(prev => [...prev, ...data.words]);
-      } else {
-        setWords(data.words);
+        setLoadingMore(true);
       }
-      setHasMore(data.hasMore);
-      setOffset(data.offset + data.words.length);
-    } catch (err) {
-      console.error("Fetch words error:", err);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  };
+
+      try {
+        const res = await fetch(
+          `/api/words?limit=${ITEMS_PER_PAGE}&offset=${nextOffset}&sort=${nextSort}`
+        );
+        if (!res.ok) {
+          throw new Error(`Request failed (${res.status})`);
+        }
+
+        const data = await res.json();
+        setWords((prev) => (append ? [...prev, ...data.words] : data.words));
+        setHasMore(data.hasMore);
+        setOffset(data.offset + data.words.length);
+        setSort(isSortOption(data.sort) ? data.sort : nextSort);
+        setError(null);
+      } catch (err) {
+        console.error("Fetch words error:", err);
+        setError(err instanceof Error ? err.message : "Failed to load words");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    fetchWords(0, false);
-  }, []);
+    // The first page is fetched after the effect runs; state updates happen
+    // once the response resolves, not synchronously during the effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchWords(0, false, "date_desc");
+  }, [fetchWords]);
 
   const handleLoadMore = useCallback(() => {
     if (hasMore && !loadingMore && !loading) {
-      fetchWords(offset, true);
+      fetchWords(offset, true, sort);
     }
-  }, [hasMore, loadingMore, loading, offset]);
+  }, [hasMore, loadingMore, loading, offset, sort, fetchWords]);
+
+  const handleSortChange = (nextSort: SortOption) => {
+    setSort(nextSort);
+    setWords([]);
+    setOffset(0);
+    setHasMore(true);
+    setError(null);
+    setLoading(true);
+    fetchWords(0, false, nextSort);
+  };
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -183,7 +228,7 @@ export default function WordsPage() {
 
       if (result.imported > 0) {
         setOffset(0);
-        await fetchWords(0, false);
+        await fetchWords(0, false, sort);
       }
 
       setImportResult({
@@ -215,10 +260,18 @@ export default function WordsPage() {
             <p className="text-gray-600 dark:text-gray-400">Your saved vocabulary</p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button onClick={handleImportClick} disabled={importing}>
               {importing ? "Importing..." : "Import Words"}
             </Button>
+            <div className="w-40">
+              <Select
+                aria-label="Sort words"
+                value={sort}
+                onChange={(e) => handleSortChange(e.target.value as SortOption)}
+                options={SORT_OPTIONS}
+              />
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -227,6 +280,14 @@ export default function WordsPage() {
               className="sr-only"
             />
           </div>
+
+          {error && (
+            <Card variant="destructive" className="w-full mt-4">
+              <CardContent className="p-4">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </CardContent>
+            </Card>
+          )}
 
           {importResult && (
             <Card variant={importResult.failed > 0 && importResult.imported === 0 ? "destructive" : "default"} className="w-full mt-4">

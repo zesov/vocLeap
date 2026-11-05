@@ -4,9 +4,11 @@ import {
   getWordById,
   getWordByText,
   getAllWords,
+  isWordSort,
   updateWord,
   deleteWord,
   Word,
+  WordSort,
 } from "@/lib/db/operations";
 import { withUser } from "@/lib/auth/guard";
 
@@ -33,15 +35,23 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(w);
       }
 
-      const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
-      const offset = parseInt(searchParams.get("offset") || "0");
-      const { words, total } = await getAllWords(user.id, limit, offset);
+      const limitParam = Number.parseInt(searchParams.get("limit") || "50", 10);
+      const offsetParam = Number.parseInt(searchParams.get("offset") || "0", 10);
+      const limit = Math.max(
+        1,
+        Math.min(Number.isFinite(limitParam) ? limitParam : 50, 100)
+      );
+      const offset = Math.max(Number.isFinite(offsetParam) ? offsetParam : 0, 0);
+      const sortParam = searchParams.get("sort");
+      const sort: WordSort = isWordSort(sortParam) ? sortParam : "date_desc";
+      const { words, total } = await getAllWords(user.id, limit, offset, sort);
 
       return NextResponse.json({
         words,
         total,
         limit,
         offset,
+        sort,
         hasMore: offset + limit < total,
       });
     } catch (error) {

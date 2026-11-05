@@ -155,17 +155,37 @@ export async function getWordByText(
   return r ? wordFromRow(r) : null;
 }
 
+export type WordSort = "date_desc" | "date_asc" | "alpha_asc" | "alpha_desc";
+
+const WORD_SORT_CLAUSES: Record<WordSort, string> = {
+  date_desc: "created_at DESC, id DESC",
+  date_asc: "created_at ASC, id ASC",
+  alpha_asc: "word COLLATE NOCASE ASC, id ASC",
+  alpha_desc: "word COLLATE NOCASE DESC, id DESC",
+};
+
+export function isWordSort(value: unknown): value is WordSort {
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(WORD_SORT_CLAUSES, value)
+  );
+}
+
 export async function getAllWords(
   userId: number,
   limit: number = 50,
-  offset: number = 0
+  offset: number = 0,
+  sort: WordSort = "date_desc"
 ): Promise<{ words: Word[]; total: number }> {
   const countStmt = db.prepare("SELECT COUNT(*) as count FROM words WHERE user_id = ?");
   const totalRow = await countStmt.get(userId);
   const total = Number(totalRow?.count ?? 0);
 
+  const orderBy = isWordSort(sort)
+    ? WORD_SORT_CLAUSES[sort]
+    : WORD_SORT_CLAUSES.date_desc;
   const stmt = db.prepare(
-    "SELECT * FROM words WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    `SELECT * FROM words WHERE user_id = ? ORDER BY ${orderBy} LIMIT ? OFFSET ?`
   );
   const rows = toRows<WordRow>(await stmt.all(userId, limit, offset));
   return {
@@ -436,31 +456,61 @@ export async function getReviewHistory(
   }));
 }
 
-export async function getAllReviewHistory(
-  userId: number
-): Promise<Array<ReviewHistory & { word: string; translation: string }>> {
+export interface ReviewHistoryPage {
+  entries: Array<ReviewHistory & { word: string; translation: string }>;
+  total: number;
+}
+
+/**
+ * Offset-paginated review history, newest first.
+ *
+ * Same shape as `getAllWords()` so the API and the list page can use the same
+ * `limit`/`offset`/`hasMore` contract. `id` is the tie-breaker because several
+ * reviews can share the same `reviewed_at` second.
+ */
+export async function getReviewHistoryPage(
+  userId: number,
+  limit: number = 30,
+  offset: number = 0
+): Promise<ReviewHistoryPage> {
+  const countStmt = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM review_history rh
+    JOIN words w ON rh.word_id = w.id
+    WHERE w.user_id = ?
+  `);
+  const totalRow = await countStmt.get(userId);
+  const total = Number(totalRow?.count ?? 0);
+
   const stmt = db.prepare(`
     SELECT rh.*, w.word, w.translation
     FROM review_history rh
     JOIN words w ON rh.word_id = w.id
     WHERE w.user_id = ?
-    ORDER BY rh.reviewed_at DESC
+    ORDER BY rh.reviewed_at DESC, rh.id DESC
+    LIMIT ? OFFSET ?
   `);
-  const rows = toRows<ReviewHistoryWithWordRow>(await stmt.all(userId));
-  return rows.map((r) => ({
-    id: r.id,
-    wordId: r.word_id,
-    rating: r.rating,
-    previousEaseFactor: r.previous_ease_factor,
-    previousInterval: r.previous_interval,
-    previousRepetitions: r.previous_repetitions,
-    newEaseFactor: r.new_ease_factor,
-    newInterval: r.new_interval,
-    newRepetitions: r.new_repetitions,
-    reviewedAt: r.reviewed_at ?? undefined,
-    word: r.word,
-    translation: r.translation,
-  }));
+  const rows = toRows<ReviewHistoryWithWordRow>(
+    await stmt.all(userId, limit, offset)
+  );
+
+  return {
+    total,
+    entries: rows.map((r) => ({
+      id: r.id,
+      wordId: r.word_id,
+      rating: r.rating,
+      previousEaseFactor: r.previous_ease_factor,
+      previousInterval: r.previous_interval,
+      previousRepetitions: r.previous_repetitions,
+      newEaseFactor: r.new_ease_factor,
+      newInterval: r.new_interval,
+      newRepetitions: r.new_repetitions,
+      reviewedAt: r.reviewed_at ?? undefined,
+      word: r.word,
+      translation: r.translation,
+    })),
+  };
 }
 
 // New per-word position tracking for cross-device sync

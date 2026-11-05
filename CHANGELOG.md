@@ -12,6 +12,14 @@ All notable changes to risk-frontend are documented in this file.
 - Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
 - `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
 
+## [2026-11-05] Review History Pagination & Words Sorting
+- `GET /api/reviews?action=history` now accepts `limit`/`offset` and returns `{ history, total, limit, offset, hasMore }` instead of every record
+- Review history page loads 30 entries at a time as the table scrolls, with a retry state on failure
+- Added a `review_history(reviewed_at DESC, id DESC)` index so history paging stays stable when rows share a timestamp
+- `GET /api/words` accepts `sort=date_desc|date_asc|alpha_asc|alpha_desc` (default `date_desc`) and falls back safely for unknown values
+- Words page has a Sort by control (Newest first, Oldest first, A–Z, Z–A); changing it resets the paginated list
+- Added E2E coverage for history paging and words sorting
+
 ## [2026-11-05] Review Interval Preview
 - Rating buttons now show the interval each rating would schedule, calculated from the card's current SM-2 state before rating
 - Keep the rating-button spinner centered and the button height stable while a review is submitting
