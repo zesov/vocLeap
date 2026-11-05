@@ -18,6 +18,7 @@ All notable changes to risk-frontend are documented in this file.
 - Added a `review_history(reviewed_at DESC, id DESC)` index so history paging stays stable when rows share a timestamp
 - `GET /api/words` accepts `sort=date_desc|date_asc|alpha_asc|alpha_desc` (default `date_desc`) and falls back safely for unknown values
 - Words page has a Sort by control (Newest first, Oldest first, A–Z, Z–A); changing it resets the paginated list
+- Refined the Sort by dropdown: 40px height aligned with Import Words, sort icon, custom chevron, and full-width stacking on mobile
 - Added E2E coverage for history paging and words sorting
 
 ## [2026-11-05] Review Interval Preview
