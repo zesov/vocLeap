@@ -554,6 +554,54 @@ export async function upsertUserReviewStates(
   }
 }
 
+/**
+ * Replace all saved positions for one device/mode with the supplied set.
+ *
+ * `upsertUserReviewStates` only inserts or updates, so words that drop out of
+ * the queue stay in the table forever. Over many sessions that turns into
+ * hundreds of stale rows per device. Upserting first and then pruning anything
+ * outside the current queue keeps the table (and the all-devices payload)
+ * bounded, without leaving a window where the device has no saved state.
+ */
+export async function replaceUserReviewStates(
+  userId: number,
+  deviceId: string,
+  mode: "review" | "new",
+  states: UserReviewState[]
+): Promise<void> {
+  if (states.length === 0) {
+    await clearUserReviewState(userId, deviceId, mode);
+    return;
+  }
+
+  await upsertUserReviewStates(states);
+
+  const existingStmt = db.prepare(`
+    SELECT word_id FROM user_review_state
+    WHERE user_id = ? AND device_id = ? AND mode = ?
+  `);
+  const existing = toRows<{ word_id: number }>(
+    await existingStmt.all(userId, deviceId, mode)
+  );
+  const keep = new Set(states.map((state) => state.wordId));
+  const stale = existing
+    .map((row) => row.word_id)
+    .filter((wordId) => !keep.has(wordId));
+
+  // Chunk to stay well below SQLite's 999 bound-parameter limit.
+  const CHUNK = 500;
+  for (let start = 0; start < stale.length; start += CHUNK) {
+    const chunk = stale.slice(start, start + CHUNK);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const stmt = db.prepare(`
+      DELETE FROM user_review_state
+      WHERE user_id = ? AND device_id = ? AND mode = ?
+        AND word_id IN (${placeholders})
+    `);
+    await stmt.run(userId, deviceId, mode, ...chunk);
+  }
+}
+
 export async function clearUserReviewState(
   userId: number,
   deviceId: string,

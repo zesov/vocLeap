@@ -12,6 +12,14 @@ All notable changes to risk-frontend are documented in this file.
 - Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
 - `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
 
+## [2026-11-05] Review-state Payload & Request Dedupe
+- `GET /api/review-state?allDevices=true` now returns the latest state per word across devices instead of every row; a real account dropped from 1,950 to 297 review states (~220 KB → ~34 KB)
+- Cross-device session meta is fetched in one query instead of one query per device
+- `POST /api/review-state` now replaces the device's saved slice and prunes words that left the queue, so `user_review_state` stops growing with every session
+- Removed redundant `/api/auth/me` preflight calls from the review session; the protected layout enforces auth and review submission handles a 401 directly
+- Fixed the initial sync effect double-fetching `/api/reviews` when the 3s fallback fired and `synced` then flipped to true
+- Review sync E2E coverage still passes (queue semantics and cross-device resume)
+
 ## [2026-11-04] Review Queue Semantics
 - `GET /api/reviews?action=all` now applies the same filter as `review`/`new` (due words only, or never-reviewed words only) instead of returning every word
 - The review page always loads the queue for the current mode and only uses synced positions to restore ordering, so completed cards are no longer re-queued on reload

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { 
-  getUserReviewState, 
-  upsertUserReviewStates,
+import {
+  getUserReviewState,
+  replaceUserReviewStates,
   clearUserReviewState,
   clearUserReviewMeta,
   getUserReviewMeta,
@@ -26,23 +26,42 @@ export async function GET(request: NextRequest) {
       }
 
       if (allDevices) {
-        // Return merged state across all devices (for testing/debugging)
-        // Need to use db directly since we don't have a multi-device query function
+        // Return the latest position per word across all devices.
+        //
+        // The table is keyed by (user_id, device_id, mode, word_id), so a word
+        // the user has ever seen on more than one browser/device appears once
+        // per device. Returning every row made this endpoint ship ~2k mostly
+        // redundant states (~220 KB) for a single user, even though the client
+        // only keeps the newest row per word.
         const db = (await import("@/lib/db/init")).db;
         const stmt = db.prepare(`
-          SELECT * FROM user_review_state
-          WHERE user_id = ? AND mode = ?
-          ORDER BY updated_at DESC
+          SELECT word_id, position, device_id, updated_at
+          FROM (
+            SELECT
+              word_id,
+              position,
+              device_id,
+              updated_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY word_id
+                ORDER BY updated_at DESC, device_id ASC
+              ) AS row_num
+            FROM user_review_state
+            WHERE user_id = ? AND mode = ?
+          )
+          WHERE row_num = 1
+          ORDER BY position ASC
         `);
         interface UserReviewStateRow {
-          user_id: number;
-          device_id: string;
-          mode: "review" | "new";
           word_id: number;
           position: number;
+          device_id: string;
           updated_at: string;
         }
-        const rows = (await stmt.all(user.id, mode as "review" | "new")) as unknown as UserReviewStateRow[];
+        const rows = (await stmt.all(
+          user.id,
+          mode as "review" | "new"
+        )) as unknown as UserReviewStateRow[];
         const states = rows.map((r) => ({
           wordId: r.word_id,
           position: r.position,
@@ -50,20 +69,26 @@ export async function GET(request: NextRequest) {
           updatedAt: r.updated_at,
         }));
 
-        // Get meta from the device with the latest updated_at
-        let meta: { currentIndex: number; reviewedCount: number; updatedAt: string } | null = null;
-        if (rows.length > 0) {
-          // Get unique device_ids from the states
-          const deviceIds = [...new Set(rows.map(r => r.device_id))];
-          for (const deviceId of deviceIds) {
-            const metaResult = await getUserReviewMeta(user.id, deviceId, mode as "review" | "new");
-            if (metaResult) {
-              if (!meta || metaResult.updatedAt > meta.updatedAt) {
-                meta = metaResult;
-              }
+        // Pick the newest session meta across devices in a single query,
+        // instead of one lookup per device.
+        const metaStmt = db.prepare(`
+          SELECT current_index, reviewed_count, updated_at
+          FROM user_review_meta
+          WHERE user_id = ? AND mode = ?
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `);
+        const metaRow = await metaStmt.get(
+          user.id,
+          mode as "review" | "new"
+        );
+        const meta = metaRow
+          ? {
+              currentIndex: Number(metaRow.current_index),
+              reviewedCount: Number(metaRow.reviewed_count),
+              updatedAt: String(metaRow.updated_at),
             }
-          }
-        }
+          : null;
 
         return NextResponse.json({ mode, states, meta });
       }
@@ -124,7 +149,14 @@ export async function POST(request: NextRequest) {
         }));
 
       if (validStates.length > 0) {
-        await upsertUserReviewStates(validStates);
+        // Replace this device's slice so words that have left the queue stop
+        // accumulating in user_review_state.
+        await replaceUserReviewStates(
+          user.id,
+          deviceId,
+          mode as "review" | "new",
+          validStates
+        );
       }
 
       // Save session meta (currentIndex, reviewedCount)

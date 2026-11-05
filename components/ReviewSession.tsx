@@ -339,6 +339,13 @@ export function ReviewSession() {
     if (!deviceId) return;
     let cancelled = false;
 
+    // Don't block the queue forever if the state request is slow/unreachable.
+    // The timeout only flips `synced`; the queue itself then loads from
+    // localStorage via the effect below.
+    const timeout = setTimeout(() => {
+      if (!cancelled) setSynced(true);
+    }, 3000);
+
     async function load() {
       try {
         // On initial load, fetch latest state across ALL devices for cross-device sync
@@ -362,29 +369,27 @@ export function ReviewSession() {
           const merged = mergeServerState("new", newData, localNew);
           writePositionState("new", merged);
         }
-
-        setSynced(true);
       } catch (e) {
         console.error("Sync load failed:", e);
-        setSynced(true); // Proceed with localStorage only
+      } finally {
+        clearTimeout(timeout);
+        if (!cancelled) setSynced(true); // Proceed with localStorage only
       }
     }
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
   }, [deviceId]);
 
   const fetchReviews = async () => {
     setLoading(true);
     try {
-      // Check if user is authenticated before fetching reviews
-      const authRes = await fetch("/api/auth/me");
-      if (!authRes.ok) {
-        // User is not authenticated - don't try to load reviews
-        // Redirect to login or just stop here
-        setLoading(false);
-        return;
-      }
+      // Authentication is enforced by app/(app)/layout.tsx; if the session
+      // expired while the page was open the API answers 401 and we stop here
+      // instead of making a second /api/auth/me round trip first.
       // The queue always comes from the mode endpoint so it only contains
       // words that are actually due (`review`) or never reviewed (`new`).
       // Saved positions are applied afterwards, purely to restore ordering.
@@ -464,31 +469,23 @@ export function ReviewSession() {
     }
   };
 
+  // Load the queue once the initial sync has settled, then only again when the
+  // mode actually changes. The previous polling loop could call fetchReviews
+  // from its 3s timeout path *and* again when `synced` flipped to true, which
+  // double-fetched /api/reviews on a slow sync.
   useEffect(() => {
+    if (!synced) return;
+
     let cancelled = false;
     async function run() {
-      // Wait for sync to complete (with timeout fallback)
-      if (!synced) {
-        await new Promise<void>((resolve) => {
-          const timeout = setTimeout(() => {
-            console.warn("Sync timeout, proceeding anyway");
-            resolve();
-          }, 3000);
-          const checkSync = () => {
-            if (synced || cancelled) {
-              clearTimeout(timeout);
-              resolve();
-            } else {
-              setTimeout(checkSync, 50);
-            }
-          };
-          checkSync();
-        });
-      }
-      if (!cancelled) fetchReviews();
+      if (cancelled) return;
+      await fetchReviews();
     }
-    run();
-    return () => { cancelled = true; };
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [mode, synced]);
 
   // Save position to legacy localStorage (for backward compat)
@@ -545,14 +542,6 @@ export function ReviewSession() {
   }, [currentIndex, reviewedBeforeBatch, reviews, loading, sessionComplete, synced, savePositionState]);
 
   const handleRate = useCallback(async (rating: Rating) => {
-    // Check if user is authenticated before submitting review
-    const authRes = await fetch("/api/auth/me");
-    if (!authRes.ok) {
-      console.error("Review submission error: Not authenticated");
-      alert("Please log in to submit reviews.");
-      return;
-    }
-
     const currentReview = reviews[currentIndex];
     if (!currentReview || pendingRating) return;
 
@@ -565,6 +554,10 @@ export function ReviewSession() {
         body: JSON.stringify({ wordId: currentReview.wordId, rating }),
       });
 
+      if (response.status === 401) {
+        alert("Please log in to submit reviews.");
+        return;
+      }
       if (!response.ok) {
         throw new Error("Failed to submit review");
       }
