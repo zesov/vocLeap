@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { parseRating, sm2Algorithm } from "@/lib/srs/sm2";
+import { formatPhonetic } from "@/lib/format/phonetic";
 
 type Rating = "again" | "hard" | "good" | "easy";
 type Mode = "review" | "new";
@@ -748,12 +749,9 @@ export function ReviewSession() {
       <Card variant="elevated">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              {mode === "review" ? "Review" : "New Word"} {currentPosition} of {totalReviews}
-            </span>
             {currentReview?.word?.phonetic && (
               <span className="text-gray-500 dark:text-gray-400 text-sm">
-                /{currentReview.word.phonetic}/
+                {formatPhonetic(currentReview.word.phonetic)}
               </span>
             )}
           </div>
@@ -794,7 +792,7 @@ export function ReviewSession() {
               <audio controls src={currentReview?.word?.audioUrl} className="mb-4" />
             )}
 
-            {!showAnswer ? (
+            {!showAnswer ? (<div>
               <Button
                 onClick={() => setShowAnswer(true)}
                 size="lg"
@@ -802,7 +800,7 @@ export function ReviewSession() {
                 variant="primary"
               >
                 Show Answer
-              </Button>
+              </Button></div>
             ) : (
               <div className="space-y-4">
                 <div className="text-2xl text-blue-600 dark:text-blue-400 font-medium">

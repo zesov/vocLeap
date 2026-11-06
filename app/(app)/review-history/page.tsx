@@ -167,13 +167,13 @@ export default function ReviewHistoryPage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="py-4 pl-4 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Word</th>
-                    <th className="py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Translation</th>
-                    <th className="py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Rating</th>
-                    <th className="py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Ease Factor</th>
-                    <th className="py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Interval</th>
-                    <th className="py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Reps</th>
-                    <th className="py-4 pr-4 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Reviewed At</th>
+                    <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Word</th>
+                    <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Translation</th>
+                    <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Rating</th>
+                    <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Ease Factor</th>
+                    <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Interval</th>
+                    <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Reps</th>
+                    <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Reviewed At</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -184,21 +184,21 @@ export default function ReviewHistoryPage() {
                         key={entry.id}
                         className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                       >
-                        <td className="py-3 pl-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">
+                        <td className="p-1 font-medium text-gray-900 dark:text-white whitespace-nowrap">
                           {entry.word}
                         </td>
-                        <td className="py-3 text-gray-600 dark:text-gray-300 max-w-xs break-words whitespace-normal">{entry.translation}</td>
-                        <td className="py-3 whitespace-nowrap">
+                        <td className="p-1 text-gray-600 dark:text-gray-300 max-w-xs break-words whitespace-normal">{entry.translation}</td>
+                        <td className="p-1 whitespace-nowrap">
                           <span className={`font-medium ${ratingInfo.color}`}>
                             {ratingInfo.label}
                           </span>
                         </td>
-                        <td className="py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                        <td className="p-1 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                           {entry.previousEaseFactor.toFixed(2)} → {entry.newEaseFactor.toFixed(2)}
                         </td>
-                        <td className="py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">{entry.newInterval} day{entry.newInterval !== 1 ? "s" : ""}</td>
-                        <td className="py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">{entry.newRepetitions}</td>
-                        <td className="py-3 pr-4 text-sm text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                        <td className="p-1 text-gray-600 dark:text-gray-300 whitespace-nowrap">{entry.newInterval} day{entry.newInterval !== 1 ? "s" : ""}</td>
+                        <td className="p-1 text-gray-600 dark:text-gray-300 whitespace-nowrap">{entry.newRepetitions}</td>
+                        <td className="p-1 text-sm text-gray-400 dark:text-gray-500 whitespace-nowrap">
                           {new Date(entry.reviewedAt).toLocaleString()}
                         </td>
                       </tr>

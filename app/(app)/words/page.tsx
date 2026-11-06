@@ -5,6 +5,7 @@ import NavBar from "@/components/NavBar";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { SortSelect } from "@/components/ui/SortSelect";
+import { formatPhonetic } from "@/lib/format/phonetic";
 
 const ITEMS_PER_PAGE = 30;
 
@@ -22,17 +23,6 @@ function isSortOption(value: unknown): value is SortOption {
     typeof value === "string" &&
     SORT_OPTIONS.some((option) => option.value === value)
   );
-}
-
-/**
- * Dictionary phonetics come in two shapes: bare transcriptions from Google
- * Translate ("həˈloʊ") and already-delimited/Wiktionary strings that include
- * slashes or labels. Only wrap the bare form so we never double the slashes.
- */
-function formatPhonetic(phonetic: string): string {
-  const trimmed = phonetic.trim();
-  if (!trimmed) return "";
-  return trimmed.includes("/") ? trimmed : `/${trimmed}/`;
 }
 
 export default function WordsPage() {
