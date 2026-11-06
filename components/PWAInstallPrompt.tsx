@@ -14,6 +14,20 @@ export function PWAInstallPrompt() {
   const [showIOSHint, setShowIOSHint] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  const handleInstall = useCallback(async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setDeferredPrompt(null);
+    }
+  }, [deferredPrompt]);
+
+  const handleIOSDismiss = useCallback(() => {
+    setShowIOSHint(false);
+    localStorage.setItem("pwa-ios-hint-dismissed", "true");
+  }, []);
+
   useEffect(() => {
     setMounted(true);
     // Detect iOS (no beforeinstallprompt support)
