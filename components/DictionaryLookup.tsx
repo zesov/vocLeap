@@ -6,6 +6,13 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Card, CardContent } from "@/components/ui/Card";
+import { formatPhonetic } from "@/lib/format/phonetic";
+
+interface LookupSource {
+  id: "wiktionary" | "google-translate";
+  label: string;
+  url?: string;
+}
 
 interface TranslationResult {
   word: string;
@@ -19,6 +26,54 @@ interface TranslationResult {
   audioUrl?: string;
   sourceLanguage: string;
   targetLanguage: string;
+  sources?: {
+    definitions: LookupSource | null;
+    translation: LookupSource | null;
+  };
+}
+
+function SourceBadge({ source }: { source: LookupSource }) {
+  const className =
+    "inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300";
+  const content = (
+    <>
+      <svg
+        className="h-3 w-3"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5m5.656-5.656l1.5-1.5a4 4 0 015.656 5.656l-3 3a4 4 0 01-5.656 0"
+        />
+      </svg>
+      {source.label}
+    </>
+  );
+
+  if (source.url) {
+    return (
+      <a
+        href={source.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`Source: ${source.label}`}
+        className={`${className} hover:text-blue-600 hover:border-blue-300 dark:hover:text-blue-400`}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <span title={`Source: ${source.label}`} className={className}>
+      {content}
+    </span>
+  );
 }
 
 interface DictionaryLookupProps {
@@ -207,18 +262,30 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{result.word}</h2>
                   {result.phonetic && (
-                    <span className="text-gray-500 dark:text-gray-400 text-lg">/{result.phonetic}/</span>
+                    <span className="text-gray-500 dark:text-gray-400 text-lg">
+                      {formatPhonetic(result.phonetic)}
+                    </span>
                   )}
                   {result.audioUrl && (
                     <audio controls src={result.audioUrl} className="h-8" />
                   )}
                 </div>
-                <p className="text-xl text-blue-600 dark:text-blue-400 font-medium">{result.translation}</p>
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <p className="text-xl text-blue-600 dark:text-blue-400 font-medium">{result.translation}</p>
+                  {result.sources?.translation && (
+                    <SourceBadge source={result.sources.translation} />
+                  )}
+                </div>
               </div>
 
               {result.definitions.length > 0 && (
                 <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Definitions</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Definitions</h3>
+                    {result.sources?.definitions && (
+                      <SourceBadge source={result.sources.definitions} />
+                    )}
+                  </div>
                   {result.definitions.map((def, index) => (
                     <div key={index} className="space-y-2 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
                       <div className="flex items-baseline gap-2">

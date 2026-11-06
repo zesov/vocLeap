@@ -27,6 +27,25 @@ const LANG_TO_ISO2: Record<string, string> = {
   "ru": "ru",
 };
 
+interface LookupSource {
+  id: "wiktionary" | "google-translate";
+  label: string;
+  url?: string;
+}
+
+function wiktionarySource(languageCode: string, word: string): LookupSource {
+  return {
+    id: "wiktionary",
+    label: "Wiktionary",
+    url: `https://${languageCode}.wiktionary.org/wiki/${encodeURIComponent(word)}`,
+  };
+}
+
+const GOOGLE_TRANSLATE_SOURCE: LookupSource = {
+  id: "google-translate",
+  label: "Google Translate",
+};
+
 async function fetchWiktionaryExtract(
   languageCode: string,
   word: string,
@@ -132,6 +151,10 @@ export async function POST(request: NextRequest) {
           phonetic: undefined,
           sourceLanguage: sourceLang || "en",
           targetLanguage: targetLang || "zh-CN",
+          sources: {
+            definitions: null,
+            translation: GOOGLE_TRANSLATE_SOURCE,
+          },
         });
       } catch (err) {
         console.error("AnyLang fallback error:", err);
@@ -151,17 +174,22 @@ export async function POST(request: NextRequest) {
       }));
 
     let translation = "";
+    let translationSource: LookupSource | null = null;
     if (targetCode !== sourceCode) {
       try {
         const extract = await fetchWiktionaryExtract(targetCode, word.trim());
         if (extract) {
           translation = extractCJKTranslation(extract);
+          if (translation) {
+            translationSource = wiktionarySource(targetCode, word.trim());
+          }
         }
       } catch (err) {
         console.error("Target Wiktionary fetch error:", err);
       }
     } else if (definitions[0]) {
       translation = definitions[0].definition;
+      translationSource = wiktionarySource(sourceCode, dictResult.word);
     }
 
     const result = {
@@ -171,6 +199,10 @@ export async function POST(request: NextRequest) {
       phonetic: dictResult.phonetic || undefined,
       sourceLanguage: sourceLang || "en",
       targetLanguage: targetLang || "zh-CN",
+      sources: {
+        definitions: wiktionarySource(sourceCode, dictResult.word),
+        translation: translationSource,
+      },
     };
 
     return NextResponse.json(result);
