@@ -12,7 +12,7 @@ const out1024 = process.argv[2];
 const svgBuf = readFileSync(MASTER);
 
 // high density => librsvg renders large, then downscale = clean antialiasing
-const raster = (size) => sharp(svgBuf, { density: 300 }).resize(size, size).png();
+const raster = (size: number) => sharp(svgBuf, { density: 300 }).resize(size, size).png();
 
 const sizes = [16, 32, 48];
 const pngs = await Promise.all(sizes.map((s) => raster(s).toBuffer()));
@@ -24,7 +24,7 @@ header.writeUInt16LE(0, 0); // reserved
 header.writeUInt16LE(1, 2); // type: icon
 header.writeUInt16LE(count, 4);
 
-const entries = [];
+const entries: Buffer[] = [];
 let offset = 6 + 16 * count;
 pngs.forEach((png, i) => {
   const s = sizes[i];
