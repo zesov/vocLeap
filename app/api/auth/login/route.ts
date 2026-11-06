@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       email: String(row.email),
     };
 
-    await createSession(user.id);
+    await createSession(user);
     await claimLegacyWords(user);
 
     return NextResponse.json({ user });

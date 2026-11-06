@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import NavBar from "@/components/NavBar";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { SortSelect } from "@/components/ui/SortSelect";
@@ -252,109 +251,106 @@ export default function WordsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">My Words</h1>
-            <p className="text-gray-600 dark:text-gray-400">Your saved vocabulary</p>
-          </div>
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">My Words</h1>
+          <p className="text-gray-600 dark:text-gray-400">Your saved vocabulary</p>
+        </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Button
-              onClick={handleImportClick}
-              disabled={importing}
-              className="w-full sm:w-auto"
-            >
-              {importing ? "Importing..." : "Import Words"}
-            </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button
+            onClick={handleImportClick}
+            disabled={importing}
+            className="w-full sm:w-auto"
+          >
+            {importing ? "Importing..." : "Import Words"}
+          </Button>
 
-            <div className="w-full sm:w-44">
-              <SortSelect
-                label="Sort words"
-                value={sort}
-                options={SORT_OPTIONS}
-                onChange={handleSortChange}
-              />
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.json,.csv"
-              onChange={handleFileImport}
-              className="sr-only"
+          <div className="w-full sm:w-44">
+            <SortSelect
+              label="Sort words"
+              value={sort}
+              options={SORT_OPTIONS}
+              onChange={handleSortChange}
             />
           </div>
 
-          {error && (
-            <Card variant="destructive" className="w-full mt-4">
-              <CardContent className="p-4">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {importResult && (
-            <Card variant={importResult.failed > 0 && importResult.imported === 0 ? "destructive" : "default"} className="w-full mt-4">
-              <CardContent className="p-4">
-                <p className={`text-sm ${
-                  importResult.failed > 0 && importResult.imported === 0
-                    ? "text-red-600 dark:text-red-400"
-                    : importResult.imported > 0
-                    ? "text-green-600 dark:text-green-400"
-                    : "text-gray-600 dark:text-gray-400"
-                }`}>
-                  {importResult.message}
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.json,.csv"
+            onChange={handleFileImport}
+            className="sr-only"
+          />
         </div>
 
-        {loading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
-        ) : words.length === 0 ? (
-          <Card variant="outlined">
-            <CardContent className="py-12 text-center">
-              <p className="text-gray-500 dark:text-gray-400">No words saved yet. Look up words in the dictionary or import from Google Translate above!</p>
+        {error && (
+          <Card variant="destructive" className="w-full mt-4">
+            <CardContent className="p-4">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             </CardContent>
           </Card>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {words.map((word: any) => (
-                <Card key={word.id} variant="outlined" className="hover:border-blue-300 transition-colors">
-                  <CardContent className="pt-6">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">{word.word}</h3>
-                    {word.phonetic && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {formatPhonetic(word.phonetic)}
-                      </p>
-                    )}
-                    <p className="text-blue-600 dark:text-blue-400 font-medium">{word.translation}</p>
-                    {word.definitions && word.definitions.length > 0 && (
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{word.definitions.slice(0, 2).join(", ")}</p>
-                    )}
-                    <p className="text-xs text-gray-400 mt-3">Saved: {new Date(word.created_at || word.createdAt).toLocaleDateString()}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-            
-            {hasMore && (
-              <div className="flex justify-center py-8">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading more words...</span>
-                </div>
-              </div>
-            )}
-            <div ref={observerRef} className="h-1" />
-          </>
+        )}
+
+        {importResult && (
+          <Card variant={importResult.failed > 0 && importResult.imported === 0 ? "destructive" : "default"} className="w-full mt-4">
+            <CardContent className="p-4">
+              <p className={`text-sm ${
+                importResult.failed > 0 && importResult.imported === 0
+                  ? "text-red-600 dark:text-red-400"
+                  : importResult.imported > 0
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-gray-600 dark:text-gray-400"
+              }`}>
+                {importResult.message}
+              </p>
+            </CardContent>
+          </Card>
         )}
       </div>
+
+      {loading ? (
+        <div className="text-center py-12 text-gray-500">Loading...</div>
+      ) : words.length === 0 ? (
+        <Card variant="outlined">
+          <CardContent className="py-12 text-center">
+            <p className="text-gray-500 dark:text-gray-400">No words saved yet. Look up words in the dictionary or import from Google Translate above!</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {words.map((word: any) => (
+              <Card key={word.id} variant="outlined" className="hover:border-blue-300 transition-colors">
+                <CardContent className="pt-6">
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">{word.word}</h3>
+                  {word.phonetic && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {formatPhonetic(word.phonetic)}
+                    </p>
+                  )}
+                  <p className="text-blue-600 dark:text-blue-400 font-medium">{word.translation}</p>
+                  {word.definitions && word.definitions.length > 0 && (
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{word.definitions.slice(0, 2).join(", ")}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-3">Saved: {new Date(word.created_at || word.createdAt).toLocaleDateString()}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          
+          {hasMore && (
+            <div className="flex justify-center py-8">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">Loading more words...</span>
+              </div>
+            </div>
+          )}
+          <div ref={observerRef} className="h-1" />
+        </>
+      )}
     </div>
   );
 }

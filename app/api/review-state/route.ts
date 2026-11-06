@@ -26,31 +26,55 @@ export async function GET(request: NextRequest) {
       }
 
       if (allDevices) {
-        // Return the latest position per word across all devices.
+        // Return the latest position per word across all devices — but only
+        // for words that can actually appear in the current queue.
         //
-        // The table is keyed by (user_id, device_id, mode, word_id), so a word
-        // the user has ever seen on more than one browser/device appears once
-        // per device. Returning every row made this endpoint ship ~2k mostly
-        // redundant states (~220 KB) for a single user, even though the client
-        // only keeps the newest row per word.
+        // The client uses these positions solely to restore the ordering of
+        // the queue fetched from /api/reviews (capped at `limit` words), so
+        // this query mirrors the queue's WHERE/ORDER/LIMIT (see getDueReviews
+        // / getNewWords in operations.ts). Positions for words outside the
+        // queue are never used for ordering, so shipping them only bloated
+        // the payload (~300 states for a single user) and delayed the
+        // blocking state fetch on the review page.
+        const limitParam = Number.parseInt(searchParams.get("limit") || "50", 10);
+        const limit = Math.max(
+          1,
+          Math.min(Number.isFinite(limitParam) ? limitParam : 50, 100)
+        );
+
         const db = (await import("@/lib/db/init")).db;
+        const queueFilter =
+          mode === "new"
+            ? "AND r.word_id IS NULL"
+            : "AND r.word_id IS NOT NULL AND r.next_review_date <= datetime('now')";
+        // The sort key lives on words/reviews inside the subquery; expose it
+        // as a column so the outer ORDER BY (which cannot reference `r`/`w`)
+        // can use it.
+        const queueKey =
+          mode === "new" ? "w.created_at AS queue_order" : "r.next_review_date AS queue_order";
+        const queueDir = mode === "new" ? "DESC" : "ASC";
         const stmt = db.prepare(`
           SELECT word_id, position, device_id, updated_at
           FROM (
             SELECT
-              word_id,
-              position,
-              device_id,
-              updated_at,
+              s.word_id,
+              s.position,
+              s.device_id,
+              s.updated_at,
+              ${queueKey},
               ROW_NUMBER() OVER (
-                PARTITION BY word_id
-                ORDER BY updated_at DESC, device_id ASC
+                PARTITION BY s.word_id
+                ORDER BY s.updated_at DESC, s.device_id ASC
               ) AS row_num
-            FROM user_review_state
-            WHERE user_id = ? AND mode = ?
+            FROM user_review_state s
+            JOIN words w ON w.id = s.word_id
+            LEFT JOIN reviews r ON r.word_id = s.word_id
+            WHERE s.user_id = ? AND s.mode = ? AND w.user_id = ?
+              ${queueFilter}
           )
           WHERE row_num = 1
-          ORDER BY position ASC
+          ORDER BY queue_order ${queueDir}
+          LIMIT ?
         `);
         interface UserReviewStateRow {
           word_id: number;
@@ -60,7 +84,9 @@ export async function GET(request: NextRequest) {
         }
         const rows = (await stmt.all(
           user.id,
-          mode as "review" | "new"
+          mode as "review" | "new",
+          user.id,
+          limit
         )) as unknown as UserReviewStateRow[];
         const states = rows.map((r) => ({
           wordId: r.word_id,

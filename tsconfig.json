@@ -44,7 +44,9 @@
     ".next-final/types/**/*.ts",
     ".next-final/dev/types/**/*.ts",
     ".next-check/types/**/*.ts",
-    ".next-check/dev/types/**/*.ts"
+    ".next-check/dev/types/**/*.ts",
+    ".next-pwa/types/**/*.ts",
+    ".next-pwa/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
