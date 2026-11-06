@@ -12,6 +12,18 @@ All notable changes to risk-frontend are documented in this file.
 - Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
 - `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
 
+## [2026-11-06] Fast Page Navigation
+- NavBar now renders from the route-group layouts (`app/(public)/layout.tsx`, `app/(app)/layout.tsx`) and receives the signed-in user from the server, so it persists across client-side navigations within a group instead of remounting on every page change
+- Pages no longer mount their own NavBar; public pages (home, dictionary, login, signup) moved into the `(public)` route group with a shared layout, protected pages stay in `(app)`
+- Removed the per-navigation `/api/auth/me` fetch from NavBar — the double auth check (server layout + client fetch) on every route change is gone
+- Login/signup now also set a 5-minute `vocleap_session_cache` cookie; `getCurrentUser()` serves the cached user before querying the sessions table, so repeat navigations skip the DB query
+- `getCurrentUser()` keeps `await connection()`: session checks compare an expiry against the current time, so they must render at request time (removing it triggers `blocking-prerender-current-time`; `Date.now()` hidden in helpers is still caught by the static analyzer)
+
+## [2026-11-06] Review-state Payload Bounded by the Queue
+- `GET /api/review-state?allDevices=true` now mirrors the queue's word selection (due words for `review`, never-reviewed for `new`) and caps results at `limit` (default 50, max 100) instead of returning every accumulated state row; positions for words outside the queue were fetched, merged, and stored but never used for ordering
+- The client passes `limit=50` explicitly, matching the queue fetch, so the returned word set aligns exactly with the queue
+- Verified with a 54-state test account: the endpoint returns exactly the 50 queue words; session meta (`currentIndex`/`reviewedCount`) is unaffected
+
 ## [2026-11-05] Words Phonetic Display
 - Words page cards now show each saved word's phonetic under the word, above the translation
 - Bare Google Translate phonetics get wrapped as `/…/`; already-delimited Wiktionary phonetics are shown as-is

@@ -19,37 +19,21 @@ const NAV_ITEMS: NavItem[] = [
 
 type CurrentUser = { id: number; email: string };
 
-export default function NavBar() {
+interface NavBarProps {
+  initialUser?: CurrentUser | null;
+}
+
+export default function NavBar({ initialUser = null }: NavBarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [authLoaded, setAuthLoaded] = useState(false);
+  const [user, setUser] = useState<CurrentUser | null>(initialUser);
 
   if (pathname !== lastPathname) {
     setLastPathname(pathname);
     setMobileMenuOpen(false);
   }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch("/api/auth/me")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (cancelled) return;
-        setUser(data?.user ?? null);
-        setAuthLoaded(true);
-      })
-      .catch(() => {
-        if (!cancelled) setAuthLoaded(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -102,32 +86,21 @@ export default function NavBar() {
               );
             })}
 
-            {authLoaded && (
+            {user && (
               <div className="ml-2 flex items-center gap-2 border-l border-gray-200 pl-3 dark:border-gray-700">
-                {user ? (
-                  <>
-                    <span
-                      className="max-w-[160px] truncate text-sm text-gray-600 dark:text-gray-300"
-                      title={user.email}
-                    >
-                      {user.email}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleSignOut}
-                      className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-blue-400"
-                    >
-                      Sign out
-                    </button>
-                  </>
-                ) : (
-                  <Link
-                    href="/login"
-                    className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-blue-400"
-                  >
-                    Sign in
-                  </Link>
-                )}
+                <span
+                  className="max-w-[160px] truncate text-sm text-gray-600 dark:text-gray-300"
+                  title={user.email}
+                >
+                  {user.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-blue-400"
+                >
+                  Sign out
+                </button>
               </div>
             )}
           </div>
@@ -186,33 +159,23 @@ export default function NavBar() {
                 );
               })}
 
-              {authLoaded && (
+              {user && (
                 <div className="col-span-2 mt-2 border-t border-gray-200 pt-3 dark:border-gray-700">
-                  {user ? (
-                    <div className="flex items-center justify-between gap-3">
-                      <span
-                        className="truncate text-sm text-gray-600 dark:text-gray-300"
-                        title={user.email}
-                      >
-                        {user.email}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleSignOut}
-                        className="flex min-h-[44px] items-center rounded-lg px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                      >
-                        Sign out
-                      </button>
-                    </div>
-                  ) : (
-                    <Link
-                      href="/login"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="flex min-h-[44px] items-center justify-center rounded-lg bg-gray-50 px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:bg-gray-700/50 dark:text-gray-200 dark:hover:bg-gray-700"
+                  <div className="flex items-center justify-between gap-3">
+                    <span
+                      className="truncate text-sm text-gray-600 dark:text-gray-300"
+                      title={user.email}
                     >
-                      Sign in
-                    </Link>
-                  )}
+                      {user.email}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="flex min-h-[44px] items-center rounded-lg px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      Sign out
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

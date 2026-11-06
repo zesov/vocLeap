@@ -372,9 +372,11 @@ export function ReviewSession() {
       try {
         // On initial load, fetch latest state across ALL devices for cross-device sync
         // Subsequent writes will use the current deviceId
+        // The limit mirrors the queue fetch below (limit: "50"): the API only
+        // returns positions for words that can appear in the current queue.
         const [reviewRes, newRes] = await Promise.all([
-          fetch(`/api/review-state?mode=review&allDevices=true`),
-          fetch(`/api/review-state?mode=new&allDevices=true`),
+          fetch(`/api/review-state?mode=review&allDevices=true&limit=50`),
+          fetch(`/api/review-state?mode=new&allDevices=true&limit=50`),
         ]);
 
         if (cancelled) return;
