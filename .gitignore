@@ -63,3 +63,6 @@ data/
 # agents
 .omo/
 .next*/
+
+# Brainstorming visual companion sessions
+.superpowers/
