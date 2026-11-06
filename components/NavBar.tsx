@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 
 interface NavItem {
   href: string;
@@ -218,6 +219,7 @@ export default function NavBar() {
           </div>
         </div>
       </nav>
+      <PWAInstallPrompt />
     </header>
   );
 }
