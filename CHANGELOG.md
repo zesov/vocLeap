@@ -2,16 +2,6 @@
 
 All notable changes to risk-frontend are documented in this file.
 
-## Unreleased
-
-### Android (Tauri v2)
-- Added Tauri v2 project (`src-tauri/`) with Android target (`aarch64-linux-android`)
-- Configured `tauri.conf.json` (`identifier: com.vocleap.app`, `frontendDist: ../frontend-dist`)
-- Set up `.cargo/config.toml` with NDK linker (`aarch64-linux-android34-clang`)
-- Added release APK signing via `cargo-apk` (debug keystore, `keystore_password = "android"`)
-- Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
-- `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
-
 ## [2026-11-07] Switchable SRS Algorithm (SM-2 / FSRS)
 - Users can switch their scheduling algorithm between SM-2 and FSRS via a NavBar toggle; the choice is stored per user (`users.srs_algorithm`) through `GET/PUT /api/settings`
 - FSRS uses `ts-fsrs` v6 with short-term learning steps disabled, so scheduling stays day-granular like SM-2

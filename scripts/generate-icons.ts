@@ -1,13 +1,10 @@
 import sharp from "sharp";
 import { readFileSync, writeFileSync } from "node:fs";
 
-// Usage: node scripts/generate-icons.ts [out-1024.png]
-// 1) Always: rebuild app/favicon.ico (16/32/48) from the master SVG.
-// 2) If an output path argument is given: also write a 1024x1024 PNG
-//    for `tauri icon` consumption.
+// Usage: node scripts/generate-icons.ts
+// Rebuilds app/favicon.ico (16/32/48) from the master SVG.
 
 const MASTER = "public/icons/icon-512.svg";
-const out1024 = process.argv[2];
 
 const svgBuf = readFileSync(MASTER);
 
@@ -43,8 +40,4 @@ pngs.forEach((png, i) => {
 
 writeFileSync("app/favicon.ico", Buffer.concat([header, ...entries, ...pngs]));
 
-if (out1024) {
-  await raster(1024).toFile(out1024);
-}
-
-console.log(`favicon.ico written (${sizes.join("/")} px)` + (out1024 ? `; ${out1024} written` : ""));
+console.log(`favicon.ico written (${sizes.join("/")} px)`);
