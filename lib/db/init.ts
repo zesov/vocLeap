@@ -183,6 +183,48 @@ async function columnExists(table: string, column: string): Promise<boolean> {
   return rows.some((row) => String(row.name) === column);
 }
 
+/**
+ * Adds the FSRS columns introduced for switchable SRS algorithms. Each ALTER is
+ * guarded individually so a partially migrated database converges on startup.
+ * FSRS scheduling writes its due date into the existing next_review_date column
+ * (shared with SM-2) so due-queue queries stay algorithm-agnostic.
+ */
+async function migrateSrsColumns(): Promise<void> {
+  if (!(await columnExists("users", "srs_algorithm"))) {
+    await db.exec(
+      `ALTER TABLE users ADD COLUMN srs_algorithm TEXT NOT NULL DEFAULT 'sm2'`
+    );
+  }
+
+  if (!(await columnExists("reviews", "stability"))) {
+    await db.exec(`ALTER TABLE reviews ADD COLUMN stability REAL`);
+  }
+  if (!(await columnExists("reviews", "difficulty"))) {
+    await db.exec(`ALTER TABLE reviews ADD COLUMN difficulty REAL`);
+  }
+  if (!(await columnExists("reviews", "fsrs_state"))) {
+    await db.exec(`ALTER TABLE reviews ADD COLUMN fsrs_state INTEGER`);
+  }
+  if (!(await columnExists("reviews", "lapses"))) {
+    await db.exec(`ALTER TABLE reviews ADD COLUMN lapses INTEGER`);
+  }
+  if (!(await columnExists("reviews", "fsrs_reps"))) {
+    await db.exec(`ALTER TABLE reviews ADD COLUMN fsrs_reps INTEGER`);
+  }
+  if (!(await columnExists("reviews", "fsrs_last_review"))) {
+    await db.exec(`ALTER TABLE reviews ADD COLUMN fsrs_last_review DATETIME`);
+  }
+
+  if (!(await columnExists("review_history", "algorithm"))) {
+    await db.exec(
+      `ALTER TABLE review_history ADD COLUMN algorithm TEXT NOT NULL DEFAULT 'sm2'`
+    );
+  }
+  if (!(await columnExists("review_history", "snapshot"))) {
+    await db.exec(`ALTER TABLE review_history ADD COLUMN snapshot TEXT`);
+  }
+}
+
 async function createSchema(): Promise<void> {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -276,7 +318,7 @@ async function createSchema(): Promise<void> {
     )
   `);
 
-  await db.exec(`CREATE INDEX IF NOT EXISTS idx_user_review_state_user ON user_review_state(user_id)`);
+  await migrateSrsColumns();
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_user_review_state_mode ON user_review_state(user_id, mode)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_user_review_meta_user ON user_review_meta(user_id)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`);
