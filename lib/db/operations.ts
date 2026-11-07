@@ -1,4 +1,16 @@
 import { db } from "./init";
+import {
+  fsrsStateFromColumns,
+  type FsrsState,
+  type ReviewStateSnapshot,
+} from "@/lib/srs/fsrs";
+
+export type SrsAlgorithm = "sm2" | "fsrs";
+
+export type ReviewSnapshot = {
+  before: ReviewStateSnapshot;
+  after: ReviewStateSnapshot;
+};
 
 export interface Word {
   id?: number;
@@ -22,6 +34,7 @@ export interface Review {
   repetitions: number;
   nextReviewDate: string;
   lastReviewed?: string;
+  fsrsState?: FsrsState;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -36,6 +49,8 @@ export interface ReviewHistory {
   newEaseFactor: number;
   newInterval: number;
   newRepetitions: number;
+  algorithm: SrsAlgorithm;
+  snapshot?: ReviewSnapshot;
   reviewedAt?: string;
 }
 
@@ -48,6 +63,12 @@ interface ReviewRow {
   repetitions: number;
   next_review_date: string;
   last_reviewed: string | null;
+  stability: number | null;
+  difficulty: number | null;
+  fsrs_state: number | null;
+  lapses: number | null;
+  fsrs_reps: number | null;
+  fsrs_last_review: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -62,6 +83,8 @@ interface ReviewHistoryRow {
   new_ease_factor: number;
   new_interval: number;
   new_repetitions: number;
+  algorithm: string | null;
+  snapshot: string | null;
   reviewed_at: string | null;
 }
 
@@ -97,6 +120,30 @@ function toRow<T>(row: Record<string, unknown> | null): T | null {
 
 function toRows<T>(rows: Record<string, unknown>[]): T[] {
   return rows as unknown as T[];
+}
+
+function fsrsStateFromReviewRow(r: ReviewRow): FsrsState | undefined {
+  return (
+    fsrsStateFromColumns({
+      stability: r.stability,
+      difficulty: r.difficulty,
+      fsrs_state: r.fsrs_state,
+      lapses: r.lapses,
+      reps: r.fsrs_reps,
+      fsrs_due: r.next_review_date,
+      fsrs_last_review: r.fsrs_last_review,
+    }) ?? undefined
+  );
+}
+
+function parseHistorySnapshot(raw: string | null): ReviewSnapshot | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as ReviewSnapshot;
+    return parsed.before && parsed.after ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function wordFromRow(r: WordRow): Word {
@@ -255,8 +302,51 @@ export async function assertWordOwned(
 }
 
 export async function createOrUpdateReview(
-  review: Omit<Review, "id" | "createdAt" | "updatedAt">
+  review: Omit<Review, "id" | "createdAt" | "updatedAt"> & {
+    fsrs?: {
+      stability: number;
+      difficulty: number;
+      state: number;
+      lapses: number;
+      reps: number;
+      lastReview: string | null;
+    };
+  }
 ): Promise<void> {
+  if (review.fsrs) {
+    // SM-2 columns (ease_factor/interval/repetitions) are intentionally frozen
+    // here so switching back to SM-2 resumes from that algorithm's own state.
+    const stmt = db.prepare(`
+      INSERT INTO reviews (word_id, ease_factor, interval, repetitions, next_review_date, last_reviewed, stability, difficulty, fsrs_state, lapses, fsrs_reps, fsrs_last_review)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(word_id) DO UPDATE SET
+        next_review_date = excluded.next_review_date,
+        last_reviewed = excluded.last_reviewed,
+        stability = excluded.stability,
+        difficulty = excluded.difficulty,
+        fsrs_state = excluded.fsrs_state,
+        lapses = excluded.lapses,
+        fsrs_reps = excluded.fsrs_reps,
+        fsrs_last_review = excluded.fsrs_last_review,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+    await stmt.run(
+      review.wordId,
+      review.easeFactor,
+      review.interval,
+      review.repetitions,
+      review.nextReviewDate,
+      review.lastReviewed || null,
+      review.fsrs.stability,
+      review.fsrs.difficulty,
+      review.fsrs.state,
+      review.fsrs.lapses,
+      review.fsrs.reps,
+      review.fsrs.lastReview
+    );
+    return;
+  }
+
   const stmt = db.prepare(`
     INSERT INTO reviews (word_id, ease_factor, interval, repetitions, next_review_date, last_reviewed)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -298,6 +388,7 @@ export async function getReview(
     repetitions: r.repetitions,
     nextReviewDate: r.next_review_date,
     lastReviewed: r.last_reviewed ?? undefined,
+    fsrsState: fsrsStateFromReviewRow(r),
     createdAt: r.created_at ?? undefined,
     updatedAt: r.updated_at ?? undefined,
   };
@@ -324,6 +415,7 @@ export async function getDueReviews(
     repetitions: r.repetitions,
     nextReviewDate: r.next_review_date,
     lastReviewed: r.last_reviewed ?? undefined,
+    fsrsState: fsrsStateFromReviewRow(r),
     createdAt: r.created_at ?? undefined,
     updatedAt: r.updated_at ?? undefined,
     word: {
@@ -412,11 +504,13 @@ export async function getReviewStats(userId: number): Promise<{
 }
 
 export async function addReviewHistory(
-  history: Omit<ReviewHistory, "id" | "reviewedAt">
+  history: Omit<ReviewHistory, "id" | "reviewedAt"> & {
+    snapshot?: ReviewSnapshot;
+  }
 ): Promise<void> {
   const stmt = db.prepare(`
-    INSERT INTO review_history (word_id, rating, previous_ease_factor, previous_interval, previous_repetitions, new_ease_factor, new_interval, new_repetitions)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO review_history (word_id, rating, previous_ease_factor, previous_interval, previous_repetitions, new_ease_factor, new_interval, new_repetitions, algorithm, snapshot)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   await stmt.run(
     history.wordId,
@@ -426,7 +520,9 @@ export async function addReviewHistory(
     history.previousRepetitions,
     history.newEaseFactor,
     history.newInterval,
-    history.newRepetitions
+    history.newRepetitions,
+    history.algorithm,
+    history.snapshot ? JSON.stringify(history.snapshot) : null
   );
 }
 
@@ -452,6 +548,8 @@ export async function getReviewHistory(
     newEaseFactor: r.new_ease_factor,
     newInterval: r.new_interval,
     newRepetitions: r.new_repetitions,
+    algorithm: r.algorithm === "fsrs" ? "fsrs" : "sm2",
+    snapshot: parseHistorySnapshot(r.snapshot),
     reviewedAt: r.reviewed_at ?? undefined,
   }));
 }
@@ -506,11 +604,29 @@ export async function getReviewHistoryPage(
       newEaseFactor: r.new_ease_factor,
       newInterval: r.new_interval,
       newRepetitions: r.new_repetitions,
+      algorithm: r.algorithm === "fsrs" ? "fsrs" : "sm2",
+      snapshot: parseHistorySnapshot(r.snapshot),
       reviewedAt: r.reviewed_at ?? undefined,
       word: r.word,
       translation: r.translation,
     })),
   };
+}
+
+export async function getUserAlgorithm(userId: number): Promise<SrsAlgorithm> {
+  const row = await db
+    .prepare(`SELECT srs_algorithm FROM users WHERE id = ?`)
+    .get(userId);
+  return row?.srs_algorithm === "fsrs" ? "fsrs" : "sm2";
+}
+
+export async function setUserAlgorithm(
+  userId: number,
+  algorithm: SrsAlgorithm
+): Promise<void> {
+  await db
+    .prepare(`UPDATE users SET srs_algorithm = ? WHERE id = ?`)
+    .run(algorithm, userId);
 }
 
 // New per-word position tracking for cross-device sync
