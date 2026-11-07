@@ -17,6 +17,15 @@ const RATING_LABELS: RatingLabel = {
   5: { label: "Perfect", color: "text-green-700 dark:text-green-300" },
 };
 
+type FsrsSnapshotState = {
+  stability: number;
+  difficulty: number;
+  state: number;
+  lapses: number;
+  reps: number;
+  due: string;
+};
+
 type HistoryEntry = {
   id: number;
   wordId: number;
@@ -27,6 +36,8 @@ type HistoryEntry = {
   newEaseFactor: number;
   newInterval: number;
   newRepetitions: number;
+  algorithm: "sm2" | "fsrs";
+  snapshot?: { before: FsrsSnapshotState; after: FsrsSnapshotState };
   reviewedAt: string;
   word: string;
   translation: string;
@@ -161,7 +172,7 @@ export default function ReviewHistoryPage() {
                   <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Word</th>
                   <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Translation</th>
                   <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Rating</th>
-                  <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Ease Factor</th>
+                  <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Ease / Memory</th>
                   <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Interval</th>
                   <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Reps</th>
                   <th className="p-1 text-sm font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">Reviewed At</th>
@@ -185,7 +196,19 @@ export default function ReviewHistoryPage() {
                         </span>
                       </td>
                       <td className="p-1 text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                        {entry.previousEaseFactor.toFixed(2)} → {entry.newEaseFactor.toFixed(2)}
+                        {entry.algorithm === "fsrs" && entry.snapshot ? (
+                          <>
+                            S {entry.snapshot.before.stability.toFixed(1)}
+                            →{entry.snapshot.after.stability.toFixed(1)} · D{" "}
+                            {entry.snapshot.before.difficulty.toFixed(1)}
+                            →{entry.snapshot.after.difficulty.toFixed(1)}
+                          </>
+                        ) : (
+                          <>
+                            {entry.previousEaseFactor.toFixed(2)} →{" "}
+                            {entry.newEaseFactor.toFixed(2)}
+                          </>
+                        )}
                       </td>
                       <td className="p-1 text-gray-600 dark:text-gray-300 whitespace-nowrap">{entry.newInterval} day{entry.newInterval !== 1 ? "s" : ""}</td>
                       <td className="p-1 text-gray-600 dark:text-gray-300 whitespace-nowrap">{entry.newRepetitions}</td>
