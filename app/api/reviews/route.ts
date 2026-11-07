@@ -1,12 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getDueReviews, getReview, createOrUpdateReview, addReviewHistory,
-  getReviewStats, getReviewHistory, getReviewHistoryPage, Review, getNewWords,
-  assertWordOwned,
+  getReviewStats, getReviewHistory, getReviewHistoryPage, getUserAlgorithm,
+  Review, getNewWords, assertWordOwned,
 } from "@/lib/db/operations";
-import { sm2Algorithm, parseRating, getInitialSM2State, formatDateForDB } from "@/lib/srs/sm2";
+import { sm2Algorithm, parseRating, formatDateForDB } from "@/lib/srs/sm2";
+import {
+  seedFsrsStateFromSm2,
+  scheduleWithFsrs,
+  previewFsrsIntervals,
+  fsrsStateToColumns,
+  fsrsStateToSnapshot,
+  RATING_TO_SM2_SCALE,
+  type FsrsState,
+  type RatingName,
+} from "@/lib/srs/fsrs";
 import { withUser } from "@/lib/auth/guard";
 import { db } from "@/lib/db/init";
+
+const RATING_NAMES: RatingName[] = ["again", "hard", "good", "easy"];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function ratingNameFromValue(value: unknown): RatingName | null {
+  if (typeof value === "string") {
+    return (RATING_NAMES as string[]).includes(value)
+      ? (value as RatingName)
+      : null;
+  }
+  if (typeof value === "number") {
+    switch (value) {
+      case 0: return "again";
+      case 3: return "hard";
+      case 4: return "good";
+      case 5: return "easy";
+      default: return null;
+    }
+  }
+  return null;
+}
+
+function resolveFsrsState(review: Review | null): FsrsState {
+  if (review?.fsrsState) return review.fsrsState;
+  return seedFsrsStateFromSm2({
+    easeFactor: review?.easeFactor ?? 2.5,
+    interval: review?.interval ?? 0,
+    repetitions: review?.repetitions ?? 0,
+    nextReviewDate: review?.nextReviewDate ?? null,
+    lastReviewed: review?.lastReviewed ?? null,
+  });
+}
 
 export async function GET(request: NextRequest) {
   return withUser(async (user) => {
@@ -132,6 +175,38 @@ export async function GET(request: NextRequest) {
           hasMore: offset + limit < total,
         });
       }
+      if (action === "intervals") {
+        if (!wordId) {
+          return NextResponse.json({ error: "wordId required" }, { status: 400 });
+        }
+        const numericId = parseInt(wordId, 10);
+        if (!(await assertWordOwned(user.id, numericId))) {
+          return NextResponse.json({ error: "Not found" }, { status: 404 });
+        }
+        const algorithm = await getUserAlgorithm(user.id);
+        const review = await getReview(user.id, numericId);
+        const now = new Date();
+
+        if (algorithm === "fsrs") {
+          return NextResponse.json({
+            algorithm,
+            intervals: previewFsrsIntervals(resolveFsrsState(review), now),
+          });
+        }
+
+        const prevSm2 = {
+          easeFactor: review?.easeFactor ?? 2.5,
+          interval: review?.interval ?? 0,
+          repetitions: review?.repetitions ?? 0,
+        };
+        const intervals = Object.fromEntries(
+          RATING_NAMES.map((name) => [
+            name,
+            sm2Algorithm({ ...prevSm2, rating: parseRating(name) }).interval,
+          ])
+        );
+        return NextResponse.json({ algorithm, intervals });
+      }
       if (wordId) {
         const review = await getReview(user.id, parseInt(wordId, 10));
         if (!review) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -158,12 +233,77 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
 
-      const numericRating = typeof rating === "string" ? parseRating(rating as "again" | "hard" | "good" | "easy") : rating;
-      if (numericRating < 0 || numericRating > 5) {
-        return NextResponse.json({ error: "Rating must be 0-5" }, { status: 400 });
+      const ratingName = ratingNameFromValue(rating);
+      if (!ratingName) {
+        return NextResponse.json(
+          { error: "Rating must be again|hard|good|easy or 0|3|4|5" },
+          { status: 400 }
+        );
       }
 
       const review: Review | null = await getReview(user.id, numericWordId);
+      const algorithm = await getUserAlgorithm(user.id);
+      const now = new Date();
+
+      if (algorithm === "fsrs") {
+        const prevState = resolveFsrsState(review);
+        const nextState = scheduleWithFsrs(prevState, ratingName, now);
+        const columns = fsrsStateToColumns(nextState);
+        const intervalDays = Math.max(
+          1,
+          Math.round((nextState.due.getTime() - now.getTime()) / DAY_MS)
+        );
+
+        await createOrUpdateReview({
+          wordId: numericWordId,
+          easeFactor: review?.easeFactor ?? 2.5,
+          interval: review?.interval ?? 0,
+          repetitions: review?.repetitions ?? 0,
+          nextReviewDate: formatDateForDB(nextState.due),
+          lastReviewed: formatDateForDB(now),
+          fsrs: {
+            stability: columns.stability,
+            difficulty: columns.difficulty,
+            state: columns.fsrsState,
+            lapses: columns.lapses,
+            reps: columns.reps,
+            lastReview: columns.lastReview,
+          },
+        });
+
+        await addReviewHistory({
+          wordId: numericWordId,
+          rating: RATING_TO_SM2_SCALE[ratingName],
+          previousEaseFactor: review?.easeFactor ?? 2.5,
+          previousInterval: review?.interval ?? 0,
+          previousRepetitions: review?.repetitions ?? 0,
+          newEaseFactor: 0,
+          newInterval: intervalDays,
+          newRepetitions: nextState.reps,
+          algorithm: "fsrs",
+          snapshot: {
+            before: fsrsStateToSnapshot(prevState),
+            after: fsrsStateToSnapshot(nextState),
+          },
+        });
+
+        return NextResponse.json({
+          wordId: numericWordId,
+          easeFactor: review?.easeFactor ?? 2.5,
+          interval: intervalDays,
+          repetitions: nextState.reps,
+          nextReviewDate: formatDateForDB(nextState.due),
+          algorithm: "fsrs",
+          fsrs: {
+            stability: nextState.stability,
+            difficulty: nextState.difficulty,
+            state: nextState.state,
+            lapses: nextState.lapses,
+            reps: nextState.reps,
+          },
+        });
+      }
+
       const prevState = review ? {
         easeFactor: review.easeFactor,
         interval: review.interval,
@@ -180,7 +320,7 @@ export async function POST(request: NextRequest) {
         easeFactor: inputReview.easeFactor,
         interval: inputReview.interval,
         repetitions: inputReview.repetitions,
-        rating: numericRating,
+        rating: parseRating(ratingName),
       });
 
       await createOrUpdateReview({
@@ -194,13 +334,14 @@ export async function POST(request: NextRequest) {
 
       await addReviewHistory({
         wordId: numericWordId,
-        rating: numericRating,
+        rating: parseRating(ratingName),
         previousEaseFactor: prevState.easeFactor,
         previousInterval: prevState.interval,
         previousRepetitions: prevState.repetitions,
         newEaseFactor: result.easeFactor,
         newInterval: result.interval,
         newRepetitions: result.repetitions,
+        algorithm: "sm2",
       });
 
       return NextResponse.json({
