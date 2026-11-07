@@ -1,6 +1,14 @@
 import Link from "next/link";
+import { cacheLife } from "next/cache";
 
-export default function HomePage() {
+async function getCurrentYear() {
+  "use cache";
+  cacheLife("max");
+  return new Date().getFullYear();
+}
+
+export default async function HomePage() {
+  const year = await getCurrentYear();
   return (
     <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col items-center">
       <div className="text-center mb-6">
@@ -60,11 +68,15 @@ export default function HomePage() {
         </Link>
       </div>
       
-      <div className="mt-12 text-center">
+      <div className="mt-6 text-center">
         <p className="text-gray-500 dark:text-gray-400 text-sm">
           Works offline as a PWA • Your vocabulary syncs across devices
         </p>
       </div>
+
+      <footer className="mt-12 w-full pt-6 border-t border-gray-200 dark:border-gray-700 text-start text-sm text-gray-500 dark:text-gray-400">
+        Baked with <span className="text-red-500">♥</span> in Hong Kong © 2017-{year} Appnxt.
+      </footer>
     </main>
   );
 }
