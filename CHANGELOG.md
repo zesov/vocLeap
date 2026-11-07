@@ -12,6 +12,15 @@ All notable changes to risk-frontend are documented in this file.
 - Built `target/release/apk/app_lib.apk` (arm64-v8a, ~3 MB)
 - `.gitignore` extended: `src-tauri/target/`, `frontend-dist/`, `.Android/`, `local.properties`, `gradle/`
 
+## [2026-11-07] Switchable SRS Algorithm (SM-2 / FSRS)
+- Users can switch their scheduling algorithm between SM-2 and FSRS via a NavBar toggle; the choice is stored per user (`users.srs_algorithm`) through `GET/PUT /api/settings`
+- FSRS uses `ts-fsrs` v6 with short-term learning steps disabled, so scheduling stays day-granular like SM-2
+- FSRS card state (stability, difficulty, state, lapses, reps) persists in new `reviews` columns; the FSRS due date writes into the shared `next_review_date`, keeping due-queue queries and stats algorithm-agnostic
+- Switching is non-destructive: the first FSRS review of a word seeds memory state from its SM-2 state (interval → stability at 0.9 retention, ease factor → difficulty via the fsrs4anki conversion); switching back to SM-2 resumes SM-2's own frozen columns
+- Rating buttons now preview intervals computed server-side (`GET /api/reviews?action=intervals`) with the user's active algorithm, replacing the client-side SM-2-only calculation; the mobile menu replaces the native select with a segmented control (fixes native dropdown popup mispositioning)
+- `review_history` records which algorithm produced each entry plus a before/after FSRS snapshot; the history table shows `S …/D …` memory state for FSRS rows instead of the meaningless ease-factor zeros
+- Startup migration adds all new columns idempotently (works on both the local SQLite and Turso backends); existing data is untouched
+
 ## [2026-11-06] Fast Page Navigation
 - NavBar now renders from the route-group layouts (`app/(public)/layout.tsx`, `app/(app)/layout.tsx`) and receives the signed-in user from the server, so it persists across client-side navigations within a group instead of remounting on every page change
 - Pages no longer mount their own NavBar; public pages (home, dictionary, login, signup) moved into the `(public)` route group with a shared layout, protected pages stay in `(app)`
