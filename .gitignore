@@ -20,17 +20,6 @@
 /.next-test/
 /out/
 
-# tauri build artifacts
-src-tauri/target/
-src-tauri/android/
-
-# android sdk / ndk / build outputs
-.Android/
-local.properties
-gradle/
-
-# frontend-dist build artifacts for Tauri
-frontend-dist/
 .cache/
 
 # production
