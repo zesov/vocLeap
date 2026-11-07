@@ -6,8 +6,10 @@ export default function HomePage() {
       <div className="text-center mb-12">
         <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Learn Vocabulary Effectively</h2>
         <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl">
-          Look up words with Wiktionary and Google Translate, save them to your personal dictionary, 
-          and review with the SM-2 spaced repetition algorithm.
+          Look up any word with Wiktionary, build your
+          personal dictionary — one word at a time or by importing a whole
+          list — then lock it in for the long term with spaced repetition
+          powered by SM-2 or FSRS.
         </p>
       </div>
       
@@ -21,7 +23,9 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Dictionary</h3>
             <p className="text-gray-600 dark:text-gray-400">
-              Look up words with translations, definitions, and examples from Google Translate.
+              Look up words with translations, definitions, and examples from
+              Wiktionary and Google Translate, then save them to your
+              dictionary.
             </p>
           </div>
         </Link>
@@ -35,7 +39,8 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Review</h3>
             <p className="text-gray-600 dark:text-gray-400">
-              Practice with spaced repetition using the SM-2 algorithm for optimal retention.
+              Practice at the right moment with spaced repetition — switch
+              between SM-2 and FSRS anytime.
             </p>
           </div>
         </Link>
@@ -49,7 +54,8 @@ export default function HomePage() {
             </div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">My Words</h3>
             <p className="text-gray-600 dark:text-gray-400">
-              Browse and manage all your saved vocabulary words.
+              Browse and manage all your saved vocabulary words, or import
+              them in bulk from a .txt, .csv, or .json file.
             </p>
           </div>
         </Link>
