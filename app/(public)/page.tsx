@@ -68,7 +68,7 @@ export default async function HomePage() {
         </Link>
       </div>
       
-      <div className="mt-6 text-center">
+      <div className="mt-12 text-center">
         <p className="text-gray-500 dark:text-gray-400 text-sm">
           Works offline as a PWA • Your vocabulary syncs across devices
         </p>
