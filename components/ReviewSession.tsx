@@ -120,9 +120,9 @@ interface Stats {
 }
 
 /**
- * Preview the interval each rating would schedule, before the user rates.
- * Uses the card's stored SM-2 state, so it matches what POST /api/reviews will
- * calculate.
+ * Local SM-2 fallback preview, shown until the server preview (action=intervals)
+ * responds. The server is the source of truth: it computes with the user's
+ * active algorithm (SM-2 or FSRS).
  */
 function getNextIntervals(review: Review): Record<Rating, number> {
   const ratings: Rating[] = ["again", "hard", "good", "easy"];
@@ -255,6 +255,7 @@ export function ReviewSession() {
   const [loading, setLoading] = useState(true);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [pendingRating, setPendingRating] = useState<Rating | null>(null);
+  const [intervalsByWord, setIntervalsByWord] = useState<Map<number, Record<Rating, number>>>(new Map());
 
   // Sync state
   const [deviceId] = useState(() => getOrCreateDeviceId());
@@ -263,6 +264,26 @@ export function ReviewSession() {
   const localStorageDebounceRef = useRef<Record<Mode, NodeJS.Timeout>>({ review: null, new: null } as any);
 
   const totalReviews = reviewedBeforeBatch + reviews.length;
+
+  // Interval previews must come from the server: the active SRS algorithm
+  // (SM-2 or FSRS) is a per-user setting only the API knows.
+  useEffect(() => {
+    const wordId = reviews[currentIndex]?.wordId;
+    if (!wordId) return;
+    let cancelled = false;
+    fetch(`/api/reviews?action=intervals&wordId=${wordId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { intervals?: Record<string, number> } | null) => {
+        if (cancelled || !data?.intervals) return;
+        setIntervalsByWord((prev) => new Map(prev).set(wordId, data.intervals as Record<Rating, number>));
+      })
+      .catch(() => {
+        // Keep the local SM-2 fallback preview on fetch failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviews, currentIndex]);
 
   // Initialize queue order from saved positions (localStorage or server-synced).
   // The queue itself comes from the API (`review` = due, `new` = never
@@ -720,7 +741,8 @@ export function ReviewSession() {
 
   const currentPosition = reviewedBeforeBatch + currentIndex + 1;
   const progress = totalReviews > 0 ? (currentPosition / totalReviews) * 100 : 0;
-  const nextIntervals = getNextIntervals(currentReview);
+  const nextIntervals =
+    intervalsByWord.get(currentReview.wordId) ?? getNextIntervals(currentReview);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
