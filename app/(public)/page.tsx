@@ -3,13 +3,12 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col items-center">
-      <div className="text-center mb-12">
+      <div className="text-center mb-6">
         <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Learn Vocabulary Effectively</h2>
         <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl">
-          Look up any word with Wiktionary, build your
-          personal dictionary — one word at a time or by importing a whole
-          list — then lock it in for the long term with spaced repetition
-          powered by SM-2 or FSRS.
+          Look up any word with Wiktionary, build your personal dictionary —
+          one at a time or in bulk — and commit your words to memory with
+          SM-2 or FSRS spaced repetition.
         </p>
       </div>
       
