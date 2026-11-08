@@ -135,14 +135,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const existing = await getWordByText(user.id, word);
-      if (existing) {
-        return NextResponse.json(
-          { error: "Word already exists", word: existing },
-          { status: 409 }
-        );
-      }
-
       const wordData: Omit<Word, "id" | "createdAt" | "updatedAt"> = {
         word: word.trim(),
         translation,
@@ -153,6 +145,30 @@ export async function POST(request: NextRequest) {
         sourceLanguage: sourceLanguage || "en",
         targetLanguage: targetLanguage || "zh-CN",
       };
+
+      // Intentional upsert: re-saving an existing word refreshes it (bumping
+      // updated_at for the My Words updated-date sort) instead of returning 409.
+      const existing = await getWordByText(user.id, wordData.word);
+      const existingId = existing?.id;
+      if (existingId !== undefined) {
+        const success = await updateWord(user.id, existingId, {
+          translation: wordData.translation,
+          definitions: wordData.definitions,
+          examples: wordData.examples,
+          phonetic: wordData.phonetic,
+          audioUrl: wordData.audioUrl,
+          sourceLanguage: wordData.sourceLanguage,
+          targetLanguage: wordData.targetLanguage,
+        });
+        if (!success) {
+          return NextResponse.json(
+            { error: "Failed to update word" },
+            { status: 500 }
+          );
+        }
+        const updatedWord = await getWordById(user.id, existingId);
+        return NextResponse.json(updatedWord, { status: 200 });
+      }
 
       const id = await createWord(user.id, wordData);
       const newWord = await getWordById(user.id, id);

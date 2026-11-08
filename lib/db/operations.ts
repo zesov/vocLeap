@@ -205,8 +205,8 @@ export async function getWordByText(
 export type WordSort = "date_desc" | "date_asc" | "alpha_asc" | "alpha_desc";
 
 const WORD_SORT_CLAUSES: Record<WordSort, string> = {
-  date_desc: "created_at DESC, id DESC",
-  date_asc: "created_at ASC, id ASC",
+  date_desc: "updated_at DESC, id DESC",
+  date_asc: "updated_at ASC, id ASC",
   alpha_asc: "word COLLATE NOCASE ASC, id ASC",
   alpha_desc: "word COLLATE NOCASE DESC, id DESC",
 };
@@ -268,6 +268,14 @@ export async function updateWord(
   if (updates.audioUrl !== undefined) {
     fields.push("audio_url = ?");
     values.push(updates.audioUrl);
+  }
+  if (updates.sourceLanguage) {
+    fields.push("source_language = ?");
+    values.push(updates.sourceLanguage);
+  }
+  if (updates.targetLanguage) {
+    fields.push("target_language = ?");
+    values.push(updates.targetLanguage);
   }
 
   if (fields.length === 0) return false;
