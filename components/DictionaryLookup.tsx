@@ -183,13 +183,11 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
         if (response.status === 401) {
           setSaveRequiresAuth(true);
           setSaveMessage("");
-        } else if (response.status === 409) {
-          setSaveMessage("Word already saved!");
         } else {
           throw new Error(data.error || "Save failed");
         }
       } else {
-        setSaveMessage("Word saved successfully!");
+        setSaveMessage(response.status === 201 ? "Word saved successfully!" : "Word updated successfully!");
       }
     } catch (err) {
       setSaveMessage(err instanceof Error ? err.message : "Save failed");
