@@ -2,6 +2,17 @@
 
 All notable changes to risk-frontend are documented in this file.
 
+## [2026-11-09] API Latency: Region Colocation & Explicit Schema Migrations
+- Diagnosed production API latency (5.9–8.6s): Vercel functions ran in `iad1` (US East, the default) while Turso lives in `aws-ap-southeast-1` (Singapore), so every SQL statement was a ~250 ms cross-Pacific HTTP round trip; `init.ts` compounded this by running 19 sequential schema DDL/PRAGMA round trips on every serverless cold start before the first real query
+- `vercel.json` pins the function region to `sin1` (Singapore), colocating the functions with Turso — per-query latency drops from ~250 ms to single-digit ms, and warm API responses from hundreds of ms to tens
+- Schema migration is no longer an automatic cold-start step; it is explicit and idempotent:
+  - `lib/db/schema.ts` holds the DDL and `ensureSchema()`: one inspect query gathers all table/column/index flags, does nothing when the schema is current, and otherwise runs only the missing DDL as a single atomic batch (one HTTP request on Turso)
+  - `lib/db/adapter.ts` holds the backend adapters and `createAdapter()`; `better-sqlite3` is imported lazily so Turso deployments never bundle/dlopen the native module
+  - `lib/db/init.ts` is now a thin singleton: local mode converges the schema once per process (in-process, free, keeps `next dev` zero-setup); Turso mode is a deliberate no-op — a cold start pays zero DB round trips for schema checks
+  - New `bun run migrate` (`scripts/migrate.ts`) applies migrations explicitly: prints the target database, runs one inspect + one batch, and reports `Schema already up to date` or the executed statement count; forgetting to migrate fails loudly with `no such table` in the Vercel logs
+- `getReviewStats` computes its three counts (due / total / new) in one query with subqueries instead of three sequential round trips
+- README documents the schema-migration workflow (local auto, Turso explicit before deploying)
+
 ## [2026-11-07] Switchable SRS Algorithm (SM-2 / FSRS)
 - Users can switch their scheduling algorithm between SM-2 and FSRS via a NavBar toggle; the choice is stored per user (`users.srs_algorithm`) through `GET/PUT /api/settings`
 - FSRS uses `ts-fsrs` v6 with short-term learning steps disabled, so scheduling stays day-granular like SM-2

@@ -52,6 +52,25 @@ Copy `.env.example` to `.env.local` and set:
 - `DB_MODE` (`local` or `turso`)
 - `OWNER_EMAIL` — the email that should own all pre-multi-user words
 
+### Schema migrations
+
+Schema changes are an **explicit** operation, not something the app does on
+every request/cold start:
+
+- **Local development**: the schema is converged automatically once per
+  server start (in-process SQLite, effectively free). No manual step needed.
+- **Turso / production**: never auto-migrated — a serverless cold start pays
+  zero DB round trips for schema checks. Run the migration explicitly after
+  pulling schema changes and before deploying a release that needs them:
+
+  ```bash
+  DB_MODE=turso TURSO_URL=... TURSO_AUTH_TOKEN=... bun run migrate
+  ```
+
+The script is idempotent: one inspect query, and only the missing DDL as a
+single atomic batch (`Schema already up to date. Nothing to do.` when current).
+Run it against a branch database first when possible.
+
 ### Upgrading an existing database
 
 The `words` table must be rebuilt to allow the same word for different users.

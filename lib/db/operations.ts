@@ -482,32 +482,28 @@ export async function getReviewStats(userId: number): Promise<{
   total: number;
   newWords: number;
 }> {
-  const dueStmt = db.prepare(`
-    SELECT COUNT(*) as count
-    FROM reviews r
-    JOIN words w ON w.id = r.word_id
-    WHERE w.user_id = ? AND r.next_review_date <= datetime('now')
+  // Single round trip: on a remote backend (Turso) every statement is an HTTP
+  // request, so the three counts are computed as subqueries in one statement.
+  const stmt = db.prepare(`
+    SELECT
+      (
+        SELECT COUNT(*) FROM reviews r
+        JOIN words w ON w.id = r.word_id
+        WHERE w.user_id = ? AND r.next_review_date <= datetime('now')
+      ) AS due,
+      (SELECT COUNT(*) FROM words w WHERE w.user_id = ?) AS total,
+      (
+        SELECT COUNT(*) FROM words w
+        LEFT JOIN reviews r ON w.id = r.word_id
+        WHERE w.user_id = ? AND r.word_id IS NULL
+      ) AS new_words
   `);
-  const totalStmt = db.prepare(`
-    SELECT COUNT(*) as count
-    FROM words w
-    WHERE w.user_id = ?
-  `);
-  const newStmt = db.prepare(`
-    SELECT COUNT(*) as count
-    FROM words w
-    LEFT JOIN reviews r ON w.id = r.word_id
-    WHERE w.user_id = ? AND r.word_id IS NULL
-  `);
-
-  const dueRow = await dueStmt.get(userId);
-  const totalRow = await totalStmt.get(userId);
-  const newRow = await newStmt.get(userId);
+  const row = await stmt.get(userId, userId, userId);
 
   return {
-    due: Number(dueRow?.count ?? 0),
-    total: Number(totalRow?.count ?? 0),
-    newWords: Number(newRow?.count ?? 0),
+    due: Number(row?.due ?? 0),
+    total: Number(row?.total ?? 0),
+    newWords: Number(row?.new_words ?? 0),
   };
 }
 
