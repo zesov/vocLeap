@@ -5,6 +5,7 @@ import {
   RATING_TO_SM2_SCALE,
   fsrsStateFromColumns,
   fsrsStateToColumns,
+  parseDateOrNull,
   previewFsrsIntervals,
   scheduleWithFsrs,
   seedFsrsStateFromSm2,
@@ -202,5 +203,42 @@ describe("fsrsStateToColumns / fsrsStateFromColumns round-trip", () => {
         fsrs_last_review: null,
       })
     ).toBeNull();
+  });
+});
+
+describe("parseDateOrNull (DB timestamps are UTC)", () => {
+  test("treats zone-less DB timestamps as UTC, not server-local", () => {
+    expect(parseDateOrNull("2026-11-09 16:00:00")?.toISOString()).toBe(
+      "2026-11-09T16:00:00.000Z"
+    );
+  });
+
+  test("parses values with an explicit zone unchanged", () => {
+    expect(parseDateOrNull("2026-11-09T16:00:00.000Z")?.toISOString()).toBe(
+      "2026-11-09T16:00:00.000Z"
+    );
+    expect(parseDateOrNull("2026-11-09T16:00:00+08:00")?.toISOString()).toBe(
+      "2026-11-09T08:00:00.000Z"
+    );
+  });
+
+  test("returns null for null/undefined/garbage", () => {
+    expect(parseDateOrNull(null)).toBeNull();
+    expect(parseDateOrNull(undefined)).toBeNull();
+    expect(parseDateOrNull("not a date")).toBeNull();
+  });
+});
+
+describe("seedFsrsStateFromSm2 (UTC seeding)", () => {
+  test("seeds due/lastReview from zone-less DB timestamps as UTC", () => {
+    const state = seedFsrsStateFromSm2({
+      easeFactor: 2.5,
+      interval: 6,
+      repetitions: 2,
+      nextReviewDate: "2026-11-09 16:00:00",
+      lastReviewed: "2026-11-03 16:00:00",
+    });
+    expect(state.due.toISOString()).toBe("2026-11-09T16:00:00.000Z");
+    expect(state.lastReview?.toISOString()).toBe("2026-11-03T16:00:00.000Z");
   });
 });
