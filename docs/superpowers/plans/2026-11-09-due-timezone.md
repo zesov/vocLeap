@@ -24,7 +24,7 @@
 - Create: `lib/timezone.test.ts`
 - Modify: `tsconfig.json` (exclude the new test file from tsc)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `lib/timezone.test.ts`:
 
@@ -86,12 +86,12 @@ describe("resolveClientTimezone", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test lib/timezone.test.ts`
 Expected: FAIL — `Cannot find module './timezone'` (or equivalent).
 
-- [ ] **Step 3: Implement `lib/timezone.ts`**
+- [x] **Step 3: Implement `lib/timezone.ts`**
 
 ```ts
 /**
@@ -183,7 +183,7 @@ export function resolveClientTimezone(input: unknown): string | null {
 }
 ```
 
-- [ ] **Step 4: Exclude the test file from tsc and run the test to verify it passes**
+- [x] **Step 4: Exclude the test file from tsc and run the test to verify it passes**
 
 In `tsconfig.json`, extend `exclude` (currently ends with `"lib/srs/fsrs.test.ts"`):
 
@@ -198,7 +198,7 @@ In `tsconfig.json`, extend `exclude` (currently ends with `"lib/srs/fsrs.test.ts
 Run: `bun test lib/timezone.test.ts`
 Expected: PASS — 6 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/timezone.ts lib/timezone.test.ts tsconfig.json
@@ -214,7 +214,7 @@ git commit -m "feat: add user-timezone day-boundary helpers"
 - Create: `lib/srs/sm2.test.ts`
 - Modify: `tsconfig.json` (exclude the new test file)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `lib/srs/sm2.test.ts`:
 
@@ -267,12 +267,12 @@ describe("sm2Algorithm next-review boundary", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test lib/srs/sm2.test.ts`
 Expected: FAIL — the timezone tests get a server-local boundary instead of the user-zone one (with the default machine TZ ≠ Asia/Hong_Kong), and TS rejects the unknown `timezone`/`now` properties.
 
-- [ ] **Step 3: Implement in `lib/srs/sm2.ts`**
+- [x] **Step 3: Implement in `lib/srs/sm2.ts`**
 
 Add the import at the top of the file:
 
@@ -330,14 +330,14 @@ and extend the destructure at the top of the function:
   const { easeFactor, interval, repetitions, rating, timezone, now } = input;
 ```
 
-- [ ] **Step 4: Exclude the test file from tsc and run the tests**
+- [x] **Step 4: Exclude the test file from tsc and run the tests**
 
 In `tsconfig.json` `exclude`, add `"lib/srs/sm2.test.ts"` after `"lib/srs/fsrs.test.ts"`.
 
 Run: `bun test lib/srs/sm2.test.ts`
 Expected: PASS — 4 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/srs/sm2.ts lib/srs/sm2.test.ts tsconfig.json
@@ -352,7 +352,7 @@ git commit -m "feat: schedule SM-2 due at the user's local midnight"
 - Modify: `lib/srs/fsrs.ts` (`parseDateOrNull`, line ~82; `seedFsrsStateFromSm2`, line ~129)
 - Modify: `lib/srs/fsrs.test.ts` (append two `describe` blocks)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to the end of `lib/srs/fsrs.test.ts` (also add `parseDateOrNull` to the existing import from `"./fsrs"`):
 
@@ -395,13 +395,13 @@ describe("seedFsrsStateFromSm2 (UTC seeding)", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run with a non-UTC TZ so the bug is deterministic on any machine:
 `TZ=Asia/Hong_Kong bun test lib/srs/fsrs.test.ts`
 Expected: FAIL — `"2026-11-09 16:00:00"` is parsed as 16:00 *HKT* (= 08:00 UTC), so `toISOString()` yields `"2026-11-09T08:00:00.000Z"`. Also FAILS to compile: `parseDateOrNull` is not exported.
 
-- [ ] **Step 3: Implement in `lib/srs/fsrs.ts`**
+- [x] **Step 3: Implement in `lib/srs/fsrs.ts`**
 
 Replace `parseDateOrNull`:
 
@@ -449,12 +449,12 @@ with:
     );
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `TZ=Asia/Hong_Kong bun test lib/srs/fsrs.test.ts`
 Expected: PASS — all existing tests plus the 4 new ones.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/srs/fsrs.ts lib/srs/fsrs.test.ts
@@ -469,7 +469,7 @@ git commit -m "fix: parse zone-less DB timestamps as UTC in FSRS seeding"
 - Modify: `app/api/reviews/route.ts` (imports ~line 7; POST body read ~line 226; SM-2 call ~line 319)
 - Modify: `components/ReviewSession.tsx` (`handleRate` fetch, lines ~643-647)
 
-- [ ] **Step 1: Server — read and validate `timezone` from the POST body**
+- [x] **Step 1: Server — read and validate `timezone` from the POST body**
 
 In `app/api/reviews/route.ts`, add to the imports:
 
@@ -512,7 +512,7 @@ Pass it into the SM-2 scheduling call:
 
 Do NOT touch the FSRS branch — `scheduleWithFsrs` stays instant-based by design.
 
-- [ ] **Step 2: Client — send the browser timezone with each rating**
+- [x] **Step 2: Client — send the browser timezone with each rating**
 
 In `components/ReviewSession.tsx`, `handleRate`, change the fetch body:
 
@@ -530,7 +530,7 @@ to:
         }),
 ```
 
-- [ ] **Step 3: Typecheck and lint**
+- [x] **Step 3: Typecheck and lint**
 
 Run: `bunx tsc --noEmit`
 Expected: no errors.
@@ -538,12 +538,12 @@ Expected: no errors.
 Run: `bun run lint`
 Expected: passes (no new warnings).
 
-- [ ] **Step 4: Run the full unit suite**
+- [x] **Step 4: Run the full unit suite**
 
 Run: `TZ=Asia/Hong_Kong bun test lib/timezone.test.ts lib/srs/sm2.test.ts lib/srs/fsrs.test.ts`
 Expected: PASS — all tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/api/reviews/route.ts components/ReviewSession.tsx
@@ -556,17 +556,17 @@ git commit -m "feat: send client timezone with review submissions"
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Start the dev server on the Playwright port**
+- [x] **Step 1: Start the dev server on the Playwright port**
 
 Run in background: `bun run dev -- --port 3001`
 Expected: server ready on `http://localhost:3001`. (Check `playwright.config.ts` baseURL first — it expects `http://localhost:3001`.)
 
-- [ ] **Step 2: Run the review E2E suites**
+- [x] **Step 2: Run the review E2E suites**
 
 Run: `bunx playwright test tests/e2e/review-queue.spec.ts tests/e2e/review-history.spec.ts`
 Expected: PASS — these suites POST `/api/reviews` without a timezone, exercising the fallback path.
 
-- [ ] **Step 3: Manual DB sanity check (optional but recommended)**
+- [x] **Step 3: Manual DB sanity check (optional but recommended)**
 
 With a logged-in browser session, rate a word with `good` and confirm in the DB that `next_review_date` is the UTC instant of *your* local midnight tomorrow (e.g. for `Asia/Hong_Kong`, `YYYY-MM-DD 16:00:00` of today's date):
 
@@ -576,7 +576,7 @@ sqlite3 data/vocleap.db "SELECT word_id, next_review_date FROM reviews ORDER BY 
 
 Expected: the newest row's `next_review_date` equals local-midnight-tomorrow expressed in UTC.
 
-- [ ] **Step 4: Stop the dev server**
+- [x] **Step 4: Stop the dev server**
 
 Kill the background `bun run dev` process.
 
@@ -587,3 +587,9 @@ Kill the background `bun run dev` process.
 - **Spec coverage:** write-side boundary (Tasks 1+2), client→server transport (Task 4), FSRS UTC parse (Task 3), query-side unchanged (by design, verified in Task 5), fallback behavior (Tasks 2+4 tests), unit + e2e verification (Tasks 1-5). ✓
 - **Placeholders:** none — every step has full code or an exact command. ✓
 - **Type consistency:** `resolveClientTimezone(unknown) -> string | null`, `addCalendarDaysInZone(string, Date, number) -> Date`, `SM2Input.timezone?: string` / `now?: Date` used consistently across tasks. ✓
+
+## Execution outcome (2026-11-09)
+
+- All tasks implemented and committed on `develop` (cf1d3c1, a6765af, 234b566, c2dbffb).
+- Unit: 28/28 pass (`TZ=Asia/Hong_Kong bun test lib/timezone.test.ts lib/srs/sm2.test.ts lib/srs/fsrs.test.ts`). Typecheck clean. ESLint clean on all touched files (repo-wide lint failures pre-date this work).
+- E2E: `review-history` and 1/3 of `review-queue` pass. The 2 failing `review-queue` tests ("reloading mid-session resumes…", "finishing a session does not resurrect…") were verified to fail identically on the pre-change commit `73413a3` (worktree run) — **pre-existing review-session restore bug, unrelated to this work**.
