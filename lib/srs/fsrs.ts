@@ -79,9 +79,19 @@ function toISO(date: Date): string {
   return date.toISOString();
 }
 
-function parseDateOrNull(value: unknown): Date | null {
+/** DB DATETIME columns hold UTC without a zone marker ("YYYY-MM-DD HH:MM:SS").
+ * `new Date(...)` reads such strings as server-LOCAL time, which would shift
+ * every stored instant on non-UTC servers, so normalize them to ISO UTC
+ * first. Strings that already carry a zone (ISO snapshots) parse as-is. */
+const ZONELESS_DB_TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/;
+
+export function parseDateOrNull(value: unknown): Date | null {
   if (value === null || value === undefined) return null;
-  const date = new Date(String(value));
+  const raw = String(value);
+  const normalized = ZONELESS_DB_TIMESTAMP.test(raw)
+    ? `${raw.replace(" ", "T")}Z`
+    : raw;
+  const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -126,7 +136,7 @@ export function seedFsrsStateFromSm2(sm2: Sm2SeedInput): FsrsState {
 
   if (repetitions === 0 && interval === 0) {
     return cardToState(
-      createEmptyCard(nextReviewDate ? new Date(nextReviewDate) : new Date())
+      createEmptyCard(parseDateOrNull(nextReviewDate) ?? new Date())
     );
   }
 
