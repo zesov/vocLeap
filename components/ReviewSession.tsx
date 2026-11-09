@@ -643,7 +643,11 @@ export function ReviewSession() {
       const response = await fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wordId: currentReview.wordId, rating }),
+        body: JSON.stringify({
+          wordId: currentReview.wordId,
+          rating,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
       });
 
       if (response.status === 401) {
