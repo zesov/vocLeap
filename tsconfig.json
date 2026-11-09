@@ -50,6 +50,7 @@
   ],
   "exclude": [
     "node_modules",
-    "lib/srs/fsrs.test.ts"
+    "lib/srs/fsrs.test.ts",
+    "lib/timezone.test.ts"
   ]
 }
