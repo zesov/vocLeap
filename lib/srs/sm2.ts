@@ -1,8 +1,18 @@
+import { addCalendarDaysInZone } from "../timezone";
+
 export interface SM2Input {
   easeFactor: number;
   interval: number;
   repetitions: number;
   rating: number;
+  /**
+   * IANA time zone of the user (e.g. "Asia/Hong_Kong"). When given, the
+   * next-review boundary is that zone's local midnight, stored as UTC.
+   * Omitted -> legacy server-local boundary (old clients, tests).
+   */
+  timezone?: string;
+  /** Reference "now"; defaults to the current time. */
+  now?: Date;
 }
 
 export interface SM2Output {
@@ -13,7 +23,7 @@ export interface SM2Output {
 }
 
 export function sm2Algorithm(input: SM2Input): SM2Output {
-  const { easeFactor, interval, repetitions, rating } = input;
+  const { easeFactor, interval, repetitions, rating, timezone, now } = input;
   
   let newEaseFactor = easeFactor;
   let newInterval = interval;
@@ -38,9 +48,18 @@ export function sm2Algorithm(input: SM2Input): SM2Output {
     easeFactor + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02))
   );
   
-  const nextReviewDate = new Date();
-  nextReviewDate.setDate(nextReviewDate.getDate() + newInterval);
-  nextReviewDate.setHours(0, 0, 0, 0);
+  const referenceNow = now ?? new Date();
+  let nextReviewDate: Date;
+  if (timezone) {
+    // "Today + interval days" on the user's calendar, at their local
+    // midnight, expressed as the exact UTC instant for storage.
+    nextReviewDate = addCalendarDaysInZone(timezone, referenceNow, newInterval);
+  } else {
+    // Legacy behavior (server-local midnight) when no timezone is supplied.
+    nextReviewDate = new Date(referenceNow);
+    nextReviewDate.setDate(nextReviewDate.getDate() + newInterval);
+    nextReviewDate.setHours(0, 0, 0, 0);
+  }
   
   return {
     easeFactor: newEaseFactor,
