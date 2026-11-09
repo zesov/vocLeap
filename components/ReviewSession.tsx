@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -16,6 +17,8 @@ const RATING_CONFIG: Record<Rating, { label: string; color: string; description:
   good: { label: "Good", color: "bg-blue-600 hover:bg-blue-700", description: "Normal recall" },
   easy: { label: "Easy", color: "bg-green-600 hover:bg-green-700", description: "Instant recall" },
 };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Legacy position-based storage (for backward compatibility)
 type SavedPosition = { wordId: number; position: number };
@@ -95,6 +98,16 @@ function getOrCreateDeviceId(): string {
 const SYNC_DEBOUNCE_MS = 500;
 const LOCAL_STORAGE_DEBOUNCE_MS = 100;
 
+interface FsrsCardState {
+  stability: number;
+  difficulty: number;
+  state: number;
+  lapses: number;
+  reps: number;
+  due: string;
+  lastReview: string | null;
+}
+
 interface Review {
   wordId: number;
   word: {
@@ -111,6 +124,9 @@ interface Review {
   interval: number;
   repetitions: number;
   nextReviewDate: string;
+  // Present when the word has FSRS columns in the DB (the queue API maps
+  // fsrs_reps/stability/difficulty into this). Absent for new words.
+  fsrsState?: FsrsCardState | null;
 }
 
 interface Stats {
@@ -245,6 +261,7 @@ function mergeServerState(
 }
 
 export function ReviewSession() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("review");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -256,12 +273,16 @@ export function ReviewSession() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [pendingRating, setPendingRating] = useState<Rating | null>(null);
   const [intervalsByWord, setIntervalsByWord] = useState<Map<number, Record<Rating, number>>>(new Map());
+  // Active SRS algorithm for the signed-in user. In FSRS mode the SM-2 columns
+  // (interval/repetitions/ease_factor) are frozen by the API, so the card stats
+  // line must read fsrsState instead.
+  const [algorithm, setAlgorithm] = useState<"sm2" | "fsrs">("sm2");
 
   // Sync state
   const [deviceId] = useState(() => getOrCreateDeviceId());
   const [synced, setSynced] = useState(false);
-  const syncPositionsRef = useRef<Record<Mode, NodeJS.Timeout>>({ review: null, new: null } as any);
-  const localStorageDebounceRef = useRef<Record<Mode, NodeJS.Timeout>>({ review: null, new: null } as any);
+  const syncPositionsRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
+  const localStorageDebounceRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
 
   const totalReviews = reviewedBeforeBatch + reviews.length;
 
@@ -273,8 +294,11 @@ export function ReviewSession() {
     let cancelled = false;
     fetch(`/api/reviews?action=intervals&wordId=${wordId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { intervals?: Record<string, number> } | null) => {
+      .then((data: { intervals?: Record<string, number>; algorithm?: "sm2" | "fsrs" } | null) => {
         if (cancelled || !data?.intervals) return;
+        if (data.algorithm === "sm2" || data.algorithm === "fsrs") {
+          setAlgorithm(data.algorithm);
+        }
         setIntervalsByWord((prev) => new Map(prev).set(wordId, data.intervals as Record<Rating, number>));
       })
       .catch(() => {
@@ -285,30 +309,53 @@ export function ReviewSession() {
     };
   }, [reviews, currentIndex]);
 
+  // Load the algorithm setting up front so the FSRS stats line renders
+  // correctly on the first card instead of flashing SM-2 values.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/settings")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { srsAlgorithm?: "sm2" | "fsrs" } | null) => {
+        if (cancelled) return;
+        if (data?.srsAlgorithm === "sm2" || data?.srsAlgorithm === "fsrs") {
+          setAlgorithm(data.srsAlgorithm);
+        }
+      })
+      .catch(() => {
+        // Keep the "sm2" default on failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Initialize queue order from saved positions (localStorage or server-synced).
   // The queue itself comes from the API (`review` = due, `new` = never
   // reviewed), so saved positions can only reorder it — never add words back.
-  function initializeQueueFromPositions(reviewsData: Review[]) {
-    const saved = readPositionState(mode);
-    if (!saved || Object.keys(saved.positions).length === 0) {
-      return false;
-    }
+  const initializeQueueFromPositions = useCallback(
+    (reviewsData: Review[]) => {
+      const saved = readPositionState(mode);
+      if (!saved || Object.keys(saved.positions).length === 0) {
+        return false;
+      }
 
-    const withPosition = reviewsData
-      .filter((r) => saved.positions[r.wordId] !== undefined)
-      .sort((a, b) => saved.positions[a.wordId] - saved.positions[b.wordId]);
-    const withoutPosition = reviewsData.filter(
-      (r) => saved.positions[r.wordId] === undefined
-    );
+      const withPosition = reviewsData
+        .filter((r) => saved.positions[r.wordId] !== undefined)
+        .sort((a, b) => saved.positions[a.wordId] - saved.positions[b.wordId]);
+      const withoutPosition = reviewsData.filter(
+        (r) => saved.positions[r.wordId] === undefined
+      );
 
-    setReviews([...withPosition, ...withoutPosition]);
-    // Words already reviewed in this session are gone from the fresh queue, so
-    // the next card is always the first remaining one.
-    setCurrentIndex(0);
-    setReviewedBeforeBatch(Math.max(0, saved.reviewedCount ?? 0));
+      setReviews([...withPosition, ...withoutPosition]);
+      // Words already reviewed in this session are gone from the fresh queue, so
+      // the next card is always the first remaining one.
+      setCurrentIndex(0);
+      setReviewedBeforeBatch(Math.max(0, saved.reviewedCount ?? 0));
 
-    return true;
-  }
+      return true;
+    },
+    [mode]
+  );
 
   // Debounced save positions to server
   const savePositionsToServer = useCallback(
@@ -429,7 +476,7 @@ export function ReviewSession() {
     };
   }, [deviceId]);
 
-  const fetchReviews = async () => {
+  const fetchReviews = useCallback(async () => {
     setLoading(true);
     try {
       // Authentication is enforced by app/(app)/layout.tsx; if the session
@@ -512,7 +559,7 @@ export function ReviewSession() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [mode, initializeQueueFromPositions, clearServerState]);
 
   // Load the queue once the initial sync has settled, then only again when the
   // mode actually changes. The previous polling loop could call fetchReviews
@@ -531,7 +578,7 @@ export function ReviewSession() {
     return () => {
       cancelled = true;
     };
-  }, [mode, synced]);
+  }, [mode, synced, fetchReviews]);
 
   // Save position to legacy localStorage (for backward compat)
   useEffect(() => {
@@ -716,7 +763,7 @@ export function ReviewSession() {
               <Button onClick={fetchReviews} variant="outline">
                 Check Again
               </Button>
-              <Button onClick={() => (window.location.href = "/dictionary")}>
+              <Button onClick={() => router.push("/dictionary")}>
                 Look Up New Words
               </Button>
             </div>
@@ -743,6 +790,16 @@ export function ReviewSession() {
   const progress = totalReviews > 0 ? (currentPosition / totalReviews) * 100 : 0;
   const nextIntervals =
     intervalsByWord.get(currentReview.wordId) ?? getNextIntervals(currentReview);
+
+  // In FSRS mode the SM-2 columns (interval/repetitions/ease_factor) are
+  // frozen by the API — live state lives in fsrsState (fsrs_reps,
+  // stability, difficulty). Derive the card stats line from there, falling
+  // back to the SM-2 columns while a migrated word has no FSRS rows yet.
+  const fsrsState = algorithm === "fsrs" ? currentReview.fsrsState ?? null : null;
+  const repetitionCount = fsrsState ? fsrsState.reps : currentReview.repetitions;
+  const lastIntervalDays = fsrsState?.lastReview
+    ? (new Date(fsrsState.due).getTime() - new Date(fsrsState.lastReview).getTime()) / DAY_MS
+    : currentReview.interval;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -833,7 +890,7 @@ export function ReviewSession() {
 
                 {currentReview?.word?.definitions.length > 0 && (
                   <div className="text-left text-sm text-gray-600 dark:text-gray-300 space-y-1">
-                    {currentReview?.word?.definitions.slice(0, 3).map((def: any, i: number) => (
+                    {currentReview?.word?.definitions.slice(0, 3).map((def: string, i: number) => (
                       <p key={i} className="text-gray-700 dark:text-gray-300">{def}</p>
                     ))}
                   </div>
@@ -842,16 +899,23 @@ export function ReviewSession() {
                 {currentReview?.word?.examples.length > 0 && (
                   <div className="text-left text-sm text-gray-500 dark:text-gray-400 italic space-y-1">
                     {currentReview?.word?.examples.slice(0, 2).map((ex: string, i: number) => (
-                      <p key={i} className="text-gray-700 dark:text-gray-300">"{ex}"</p>
+                      <p key={i} className="text-gray-700 dark:text-gray-300">
+                        {`"${ex}"`}
+                      </p>
                     ))}
                   </div>
                 )}
 
                 <div className="pt-4">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                    Last interval: <span className="font-medium">{formatInterval(currentReview.interval)}</span>
-                    {currentReview.repetitions > 0 && (
-                      <> • Repetition #{currentReview.repetitions} • EF: {currentReview.easeFactor.toFixed(2)}</>
+                    Last interval: <span className="font-medium">{formatInterval(lastIntervalDays)}</span>
+                    {repetitionCount > 0 && (
+                      <>
+                        {" "}• Repetition #{repetitionCount}
+                        {fsrsState
+                          ? ` • D: ${fsrsState.difficulty.toFixed(1)} • S: ${fsrsState.stability.toFixed(1)}d`
+                          : ` • EF: ${currentReview.easeFactor.toFixed(2)}`}
+                      </>
                     )}
                   </p>
 
