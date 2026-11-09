@@ -16,6 +16,7 @@ import {
   type RatingName,
 } from "@/lib/srs/fsrs";
 import { withUser } from "@/lib/auth/guard";
+import { resolveClientTimezone } from "@/lib/timezone";
 import { db } from "@/lib/db/init";
 
 const RATING_NAMES: RatingName[] = ["again", "hard", "good", "easy"];
@@ -223,7 +224,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   return withUser(async (user) => {
     try {
-      const { wordId, rating } = await request.json();
+      const { wordId, rating, timezone } = await request.json();
       if (!wordId || rating === undefined) {
         return NextResponse.json({ error: "Word ID and rating required" }, { status: 400 });
       }
@@ -240,6 +241,11 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      // The user's device timezone decides the local-midnight boundary for
+      // the next review. Invalid/absent values fall back to the legacy
+      // server-local behavior so old cached clients keep working.
+      const clientTimezone = resolveClientTimezone(timezone) ?? undefined;
 
       const review: Review | null = await getReview(user.id, numericWordId);
       const algorithm = await getUserAlgorithm(user.id);
@@ -321,6 +327,7 @@ export async function POST(request: NextRequest) {
         interval: inputReview.interval,
         repetitions: inputReview.repetitions,
         rating: parseRating(ratingName),
+        timezone: clientTimezone,
       });
 
       await createOrUpdateReview({
