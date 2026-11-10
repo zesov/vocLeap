@@ -18,7 +18,8 @@
     "migrate:multiuser": "node --env-file-if-exists=.env scripts/migrate-multiuser.ts",
     "claim-owner": "node --env-file-if-exists=.env scripts/claim-owner.ts",
     "backfill:phonetic": "node --env-file-if-exists=.env scripts/backfill-phonetic.ts",
-    "reset:unreviewed": "node --env-file-if-exists=.env scripts/reset-unreviewed-reviews.ts"
+    "reset:unreviewed": "node --env-file-if-exists=.env scripts/reset-unreviewed-reviews.ts",
+    "release": "bun --env-file-if-exists=.env scripts/release.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
