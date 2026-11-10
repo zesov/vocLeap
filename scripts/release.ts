@@ -102,13 +102,13 @@ async function runCommand(cmd: string, dryRun: boolean): Promise<void> {
 }
 
 async function getCurrentBranch(): Promise<string> {
-  const { stdout } = await $`git branch --show-current`.quiet();
-  return stdout.trim();
+  const result = await $`git branch --show-current`.quiet();
+  return result.stdout.toString().trim();
 }
 
 async function hasUncommittedChanges(): Promise<boolean> {
-  const { stdout } = await $`git status --porcelain`.quiet();
-  return stdout.trim().length > 0;
+  const result = await $`git status --porcelain`.quiet();
+  return result.stdout.toString().trim().length > 0;
 }
 
 async function main() {
