@@ -9,21 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-11-10
+### Added
+- **Release automation script** (`scripts/release.ts`) — Auto-bump version with `--patch`, `--minor`, `--major` flags, explicit version support, dry-run preview, updates CHANGELOG.md and package.json, creates annotated git tags and GitHub Releases
+- **License compliance documentation** — Added `LICENSES.md` with full third-party license audit; README links to it for LGPL-3.0-or-later (`sharp`) transparency
+
+### Changed
+- **Build config** — Excluded `scripts/` from TypeScript compilation to avoid Bun API type errors in release script
+
+### Fixed
+- **TypeScript build** — Release script no longer blocks production type-check
 
 ## [0.7.0] - 2026-11-10
 
 ### Added
-- Top bar progress counter now matches card title (session-based) while keeping page counter for pagination context
-
-### Fixed
-- Progress percentage now calculates from current page position instead of session backlog to match page counter
-
----
-
-## [0.6.0] - 2026-11-09
-
-### Added
+- **Review session progress fix** — Top bar now shows page counter (`Card X / Y`) matching pagination, progress percentage calculates from current page position, card title retains session-based counter
 - **Explicit schema migrations** — `bun run migrate` applies idempotent migrations (one inspect + one atomic batch) for both local SQLite and Turso; local mode still auto-converges on dev
 - **Region colocation** — Vercel functions pinned to `sin1` (Singapore) to colocate with Turso (`aws-ap-southeast-1`), dropping per-query latency from ~250 ms to single-digit ms
 - **Single-query stats** — `getReviewStats` now computes due/total/new in one query with subqueries (was 3 round trips)
@@ -38,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.5.0] - 2026-11-07
+## [0.6.0] - 2026-11-07
 
 ### Added
 - **Switchable SRS algorithm** — Per-user choice between SM-2 (default) and FSRS via NavBar toggle, persisted in `users.srs_algorithm`
@@ -53,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.4.0] - 2026-11-06
+## [0.5.0] - 2026-11-06
 
 ### Added
 - **Fast page navigation** — NavBar rendered from route-group layouts (`(public)` / `(app)`), persists across client-side navigations without remount
@@ -68,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.3.0] - 2026-11-05
+## [0.4.0] - 2026-11-05
 
 ### Added
 - **Phonetic display on Words page** — Each card shows phonetic under the word; bare Google Translate phonetics wrapped as `/…/`, Wiktionary phonetics shown as-is
@@ -83,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.2.0] - 2026-11-04
+## [0.3.0] - 2026-11-04
 
 ### Added
 - **Review queue semantics** — `GET /api/reviews?action=all` now applies same filter as `review`/`new` (due only / never-reviewed only); queue loads for current mode, synced positions only restore ordering
@@ -97,7 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.0] - 2026-11-03
+## [0.2.0] - 2026-11-03
 
 ### Added
 - **Multi-user accounts** — Email/password with scrypt-hashed passwords, HttpOnly/SameSite=Lax session cookies stored as SHA-256 hashes
@@ -116,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.0.5] - 2026-11-02
+## [0.1.0] - 2026-11-02
 
 ### Added
 - **Dual SQLite backend** — `DB_MODE=local` (better-sqlite3) or `turso` (@libsql/client) via unified async `DatabaseAdapter`; Turso URL defaults to `libsql://your-database-your-org.turso.io`
@@ -142,7 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.0.4] - 2026-11-02
+## [0.0.5] - 2026-11-02
 
 ### Added
 - **Review history page** — `/review-history` shows full SM-2 history: word, translation, rating, ease factor change, interval, repetitions, reviewed at
@@ -158,6 +157,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.4] - 2026-11-02
+
+### Fixed
+- **New words queue** — Saving/importing no longer creates placeholder `reviews` row; `stats.newWords` now correct, never-reviewed words no longer counted as due
+- `GET /api/reviews?action=all&mode=new` includes never-reviewed words for cross-device restore
+- `stats.total` counts saved words (not review rows)
+- Review page decrements `newWords` immediately after rating in New Words mode
+- `bun run reset:unreviewed` deletes placeholder review rows (`last_reviewed IS NULL`, no history) from earlier versions
+- Cross-device sync E2E tests updated for new-word queue semantics
+
+---
+
 ## [0.0.3] - 2026-11-02
 
 ### Added
@@ -170,19 +181,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.0.2] - 2026-11-02
-
-### Fixed
-- **New words queue** — Saving/importing no longer creates placeholder `reviews` row; `stats.newWords` now correct, never-reviewed words no longer counted as due
-- `GET /api/reviews?action=all&mode=new` includes never-reviewed words for cross-device restore
-- `stats.total` counts saved words (not review rows)
-- Review page decrements `newWords` immediately after rating in New Words mode
-- `bun run reset:unreviewed` deletes placeholder review rows (`last_reviewed IS NULL`, no history) from earlier versions
-- Cross-device sync E2E tests updated for new-word queue semantics
-
----
-
-## [0.0.1] - 2024-11-02
+## [0.0.2] - 2024-11-02
 
 ### Added
 - Initial Vocleap Next.js PWA release

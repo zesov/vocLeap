@@ -216,6 +216,12 @@ If you discover a security vulnerability, please follow our **[Security Policy](
 
 ---
 
+## Third-Party Licenses
+
+This project includes LGPL-3.0-or-later components (`sharp` native binaries via Next.js image optimization) which are dynamically linked. See [LICENSES.md](LICENSES.md) for full attribution.
+
+---
+
 ## License
 
 **MIT License** — see [LICENSE](LICENSE) for details.
