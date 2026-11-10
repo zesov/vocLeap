@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Dictionary source badges", () => {
   test("shows Wiktionary source badges for definitions and translation", async ({ page }) => {
-    await page.goto("http://localhost:3102/dictionary");
+    await page.goto("/dictionary");
     await page.fill('input[placeholder="Enter a word to translate..."]', "blatant");
     await page.click('button[type="submit"]');
 
@@ -21,7 +21,7 @@ test.describe("Dictionary source badges", () => {
   });
 
   test("shows Google Translate source badge when Wiktionary has no result", async ({ page }) => {
-    await page.goto("http://localhost:3102/dictionary");
+    await page.goto("/dictionary");
     await page.fill('input[placeholder="Enter a word to translate..."]', "xyzzyplugh");
     await page.click('button[type="submit"]');
 

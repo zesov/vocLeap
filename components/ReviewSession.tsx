@@ -834,6 +834,9 @@ export function ReviewSession() {
       <Card variant="elevated">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {mode === "review" ? "Review" : "New Word"} {currentPosition} of {totalReviews}
+            </span>
             {currentReview?.word?.phonetic && (
               <span className="text-gray-500 dark:text-gray-400 text-sm">
                 {formatPhonetic(currentReview.word.phonetic)}
