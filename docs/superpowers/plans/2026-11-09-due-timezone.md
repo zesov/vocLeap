@@ -592,4 +592,5 @@ Kill the background `bun run dev` process.
 
 - All tasks implemented and committed on `develop` (cf1d3c1, a6765af, 234b566, c2dbffb).
 - Unit: 28/28 pass (`TZ=Asia/Hong_Kong bun test lib/timezone.test.ts lib/srs/sm2.test.ts lib/srs/fsrs.test.ts`). Typecheck clean. ESLint clean on all touched files (repo-wide lint failures pre-date this work).
-- E2E: `review-history` and 1/3 of `review-queue` pass. The 2 failing `review-queue` tests ("reloading mid-session resumes…", "finishing a session does not resurrect…") were verified to fail identically on the pre-change commit `73413a3` (worktree run) — **pre-existing review-session restore bug, unrelated to this work**.
+- E2E: `review-history` and 1/3 of `review-queue` pass. The 2 failing `review-queue` tests ("reloading mid-session resumes…", "finishing a session does not resurrect…") were verified to fail identically on the pre-change commit `73413a3` (worktree run) — **pre-existing, unrelated to this work**.
+- Follow-up (e74708f): root-caused the 2 failures — the 60a8f04 phonetic refactor had deleted the mode-aware "New Word/Review X of Y" header span the tests assert on. Restored it; also fixed `dictionary-sources.spec.ts` hardcoding the dead port `:3102`. Full chromium suite now 21/21 green.
