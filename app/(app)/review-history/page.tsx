@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { useData } from "@/lib/data/use-data";
+import type { HistoryEntry } from "@/lib/data/types";
 
 const ITEMS_PER_PAGE = 30;
 
@@ -17,33 +19,8 @@ const RATING_LABELS: RatingLabel = {
   5: { label: "Perfect", color: "text-green-700 dark:text-green-300" },
 };
 
-type FsrsSnapshotState = {
-  stability: number;
-  difficulty: number;
-  state: number;
-  lapses: number;
-  reps: number;
-  due: string;
-};
-
-type HistoryEntry = {
-  id: number;
-  wordId: number;
-  rating: number;
-  previousEaseFactor: number;
-  previousInterval: number;
-  previousRepetitions: number;
-  newEaseFactor: number;
-  newInterval: number;
-  newRepetitions: number;
-  algorithm: "sm2" | "fsrs";
-  snapshot?: { before: FsrsSnapshotState; after: FsrsSnapshotState };
-  reviewedAt: string;
-  word: string;
-  translation: string;
-};
-
 export default function ReviewHistoryPage() {
+  const data = useData();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -59,19 +36,15 @@ export default function ReviewHistoryPage() {
       }
 
       try {
-        const res = await fetch(
-          `/api/reviews?action=history&limit=${ITEMS_PER_PAGE}&offset=${nextOffset}`
-        );
-        if (!res.ok) {
-          throw new Error(`Request failed (${res.status})`);
-        }
-
-        const data = await res.json();
+        const page = await data.getHistory({
+          limit: ITEMS_PER_PAGE,
+          offset: nextOffset,
+        });
         setHistory((prev) =>
-          append ? [...prev, ...data.history] : data.history
+          append ? [...prev, ...page.history] : page.history
         );
-        setHasMore(data.hasMore);
-        setOffset(data.offset + data.history.length);
+        setHasMore(page.hasMore);
+        setOffset(page.offset + page.history.length);
         setError(null);
       } catch (err) {
         console.error("Fetch review history error:", err);
@@ -83,7 +56,7 @@ export default function ReviewHistoryPage() {
         setLoadingMore(false);
       }
     },
-    []
+    [data]
   );
 
   useEffect(() => {
@@ -187,7 +160,7 @@ export default function ReviewHistoryPage() {
                   const ratingInfo = RATING_LABELS[entry.rating] || RATING_LABELS[3];
                   return (
                     <tr
-                      key={entry.id}
+                      key={entry.uuid ?? entry.id}
                       className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                     >
                       <td className="p-1 font-medium text-gray-900 dark:text-white whitespace-nowrap">

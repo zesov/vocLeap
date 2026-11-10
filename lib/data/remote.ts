@@ -113,8 +113,13 @@ export function createRemoteData(fetchImpl: typeof fetch = fetch): DataApi {
       return post<WordRecord>("/api/words", input);
     },
 
-    translate(input) {
-      return post<DictionaryResult>("/api/translate", input);
+    translate({ word, sourceLanguage, targetLanguage }) {
+      // The /api/translate route takes `sourceLang`/`targetLang` keys.
+      return post<DictionaryResult>("/api/translate", {
+        word,
+        sourceLang: sourceLanguage,
+        targetLang: targetLanguage,
+      });
     },
 
     async setSettings(input) {

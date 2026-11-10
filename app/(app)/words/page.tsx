@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { SortSelect } from "@/components/ui/SortSelect";
 import { formatPhonetic } from "@/lib/format/phonetic";
+import { useData } from "@/lib/data/use-data";
+import { requestSync } from "@/lib/local-db/sync/trigger";
 
 const ITEMS_PER_PAGE = 30;
 
@@ -35,6 +37,7 @@ function isSortOption(value: unknown): value is SortOption {
 }
 
 export default function WordsPage() {
+  const data = useData();
   const [words, setWords] = useState<WordItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -58,18 +61,15 @@ export default function WordsPage() {
       }
 
       try {
-        const res = await fetch(
-          `/api/words?limit=${ITEMS_PER_PAGE}&offset=${nextOffset}&sort=${nextSort}`
-        );
-        if (!res.ok) {
-          throw new Error(`Request failed (${res.status})`);
-        }
-
-        const data = await res.json();
-        setWords((prev) => (append ? [...prev, ...data.words] : data.words));
-        setHasMore(data.hasMore);
-        setOffset(data.offset + data.words.length);
-        setSort(isSortOption(data.sort) ? data.sort : nextSort);
+        const page = await data.getWords({
+          limit: ITEMS_PER_PAGE,
+          offset: nextOffset,
+          sort: nextSort,
+        });
+        setWords((prev) => (append ? [...prev, ...page.words] : page.words));
+        setHasMore(page.hasMore);
+        setOffset(page.offset + page.words.length);
+        setSort(isSortOption(page.sort) ? page.sort : nextSort);
         setError(null);
       } catch (err) {
         console.error("Fetch words error:", err);
@@ -79,7 +79,7 @@ export default function WordsPage() {
         setLoadingMore(false);
       }
     },
-    []
+    [data]
   );
 
   useEffect(() => {
@@ -228,6 +228,17 @@ export default function WordsPage() {
         return;
       }
 
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        setImportResult({
+          imported: 0,
+          failed: 0,
+          total: 0,
+          message: "Importing words is only available while online",
+        });
+        setImporting(false);
+        return;
+      }
+
       const res = await fetch("/api/words", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -239,6 +250,7 @@ export default function WordsPage() {
       if (result.imported > 0) {
         setOffset(0);
         await fetchWords(0, false, sort);
+        requestSync();
       }
 
       setImportResult({
