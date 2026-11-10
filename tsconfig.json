@@ -52,6 +52,7 @@
     "node_modules",
     "lib/srs/fsrs.test.ts",
     "lib/timezone.test.ts",
-    "lib/srs/sm2.test.ts"
+    "lib/srs/sm2.test.ts",
+    "lib/review-session-state.test.ts"
   ]
 }

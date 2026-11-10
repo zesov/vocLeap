@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { parseRating, sm2Algorithm } from "@/lib/srs/sm2";
+import { isSessionStateStale } from "@/lib/review-session-state";
 import { formatPhonetic } from "@/lib/format/phonetic";
 
 type Rating = "again" | "hard" | "good" | "easy";
@@ -284,7 +285,16 @@ export function ReviewSession() {
   const syncPositionsRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
   const localStorageDebounceRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
 
+  // Frozen session backlog: "already done in this session + live remaining
+  // words" (stats are uncapped), captured whenever the session (re)loads. The
+  // queue fetch is capped at 50, so restored-count + queue size would hide the
+  // overflow; the backlog must not shrink as the user progresses through it.
+  const [sessionTotal, setSessionTotal] = useState(0);
+
+  // Cumulative words done in this session (restored + this queue). Used for
+  // the completion message; the card header uses sessionTotal instead.
   const totalReviews = reviewedBeforeBatch + reviews.length;
+  const sessionBacklog = sessionTotal > 0 ? sessionTotal : totalReviews;
 
   // Interval previews must come from the server: the active SRS algorithm
   // (SM-2 or FSRS) is a per-user setting only the API knows.
@@ -333,15 +343,16 @@ export function ReviewSession() {
   // The queue itself comes from the API (`review` = due, `new` = never
   // reviewed), so saved positions can only reorder it — never add words back.
   const initializeQueueFromPositions = useCallback(
-    (reviewsData: Review[]) => {
-      const saved = readPositionState(mode);
-      if (!saved || Object.keys(saved.positions).length === 0) {
-        return false;
-      }
-
+    (reviewsData: Review[], saved: PositionState) => {
       const withPosition = reviewsData
         .filter((r) => saved.positions[r.wordId] !== undefined)
         .sort((a, b) => saved.positions[a.wordId] - saved.positions[b.wordId]);
+      // Saved positions that intersect nothing describe a queue this session
+      // no longer contains — restoring their reviewedCount would attach
+      // someone else's progress to a fresh queue.
+      if (withPosition.length === 0) {
+        return false;
+      }
       const withoutPosition = reviewsData.filter(
         (r) => saved.positions[r.wordId] === undefined
       );
@@ -354,7 +365,7 @@ export function ReviewSession() {
 
       return true;
     },
-    [mode]
+    []
   );
 
   // Debounced save positions to server
@@ -515,7 +526,29 @@ export function ReviewSession() {
 
       // Try to restore queue ordering from saved positions (server-synced)
       setStats(statsData);
-      const restored = initializeQueueFromPositions(reviewsData);
+
+      // Session backlog (see sessionTotal): words already done in this session
+      // plus the live remaining count from stats, which — unlike the queue
+      // fetch — is not capped at 50.
+      const remainingLive =
+        mode === "review" ? Number(statsData.due) : Number(statsData.newWords);
+
+      const savedState = readPositionState(mode);
+      let restored = false;
+      let doneSoFar = 0;
+
+      if (savedState && Object.keys(savedState.positions).length > 0) {
+        if (isSessionStateStale(savedState)) {
+          // A new local day is a new session: yesterday's reviewedCount would
+          // only produce phantom totals, so drop it everywhere.
+          clearSavedPosition(mode);
+          clearPositionState(mode);
+          void clearServerState(mode);
+        } else {
+          restored = initializeQueueFromPositions(reviewsData, savedState);
+          if (restored) doneSoFar = Math.max(0, savedState.reviewedCount ?? 0);
+        }
+      }
 
       if (!restored) {
         // No synced state - use API order and try legacy restore
@@ -526,11 +559,11 @@ export function ReviewSession() {
         reviewsData.forEach((r: Review, idx: number) => {
           initialPositions[r.wordId] = idx;
         });
-        writePositionState(mode, { 
-          positions: initialPositions, 
-          currentIndex: 0, 
+        writePositionState(mode, {
+          positions: initialPositions,
+          currentIndex: 0,
           reviewedCount: 0,
-          updatedAt: new Date().toISOString() 
+          updatedAt: new Date().toISOString()
         });
 
         const saved = readSavedPosition(mode);
@@ -542,7 +575,10 @@ export function ReviewSession() {
 
         setCurrentIndex(saved && savedIndex >= 0 ? savedIndex : 0);
         setReviewedBeforeBatch(restoredOffset);
+        doneSoFar = restoredOffset + (saved && savedIndex >= 0 ? savedIndex : 0);
       }
+
+      setSessionTotal(doneSoFar + remainingLive);
 
       setShowAnswer(false);
       setSessionComplete(reviewsData.length === 0);
@@ -791,7 +827,7 @@ export function ReviewSession() {
   }
 
   const currentPosition = reviewedBeforeBatch + currentIndex + 1;
-  const progress = totalReviews > 0 ? (currentPosition / totalReviews) * 100 : 0;
+  const progress = sessionBacklog > 0 ? (currentPosition / sessionBacklog) * 100 : 0;
   const nextIntervals =
     intervalsByWord.get(currentReview.wordId) ?? getNextIntervals(currentReview);
 
@@ -808,7 +844,7 @@ export function ReviewSession() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 mb-2">
-        <span>Card {currentPosition} of {totalReviews}</span>
+        <span>Card {currentPosition} of {sessionBacklog}</span>
         <span>{Math.round(progress)}%</span>
         <span className="text-blue-600 dark:text-blue-400 font-medium">{mode === "review" ? "Review" : "New Words"}</span>
       </div>
@@ -835,7 +871,7 @@ export function ReviewSession() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              {mode === "review" ? "Review" : "New Word"} {currentPosition} of {totalReviews}
+              {mode === "review" ? "Review" : "New Word"} {currentPosition} of {sessionBacklog}
             </span>
             {currentReview?.word?.phonetic && (
               <span className="text-gray-500 dark:text-gray-400 text-sm">
