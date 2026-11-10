@@ -86,7 +86,7 @@ async function fetchWiktionaryExtract(
 
       const page = pages[pageId];
       return page.extract || null;
-    } catch (err) {
+    } catch {
       if (attempt < maxRetries - 1) {
         const delay = baseDelay * Math.pow(2, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));
