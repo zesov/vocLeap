@@ -19,7 +19,7 @@ Key directories:
 - `app/` — App Router pages and API routes (`/dictionary`, `/review`, `/review-history`, `/words`, `/api/translate`, `/api/words`, `/api/reviews`)
 - `components/` — shared UI (NavBar, ReviewSession, ui primitives)
 - `lib/db/` — Dual-backend SQLite: local (`better-sqlite3`) or Turso (`@libsql/client`). Schema/init (`init.ts`) and data operations (`operations.ts`)
-- `lib/srs/` — SM-2 algorithm (`sm2.ts`)
+- `lib/srs/` — Switchable SRS: `sm2.ts` (SM-2, `parseRating`) and `fsrs.ts` (`ts-fsrs` wrapper); per-user choice in `users.srs_algorithm` via `/api/settings`
 - `data/vocleap.db` — Local SQLite database (gitignored, used when DB_MODE=local)
 
 Important files:

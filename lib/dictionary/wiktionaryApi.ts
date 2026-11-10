@@ -9,12 +9,6 @@ export interface DictionaryResult {
   sourceLanguage?: string;
 }
 
-const PARTS_OF_SPEECH = new Set([
-  "adjective", "noun", "verb", "adverb", "interjection", "conjunction",
-  "preposition", "pronoun", "determiner", "article", "numeral", "particle",
-  "proper noun", "abbreviation", "initialism", "suffix", "prefix", "symbol",
-]);
-
 const META_SECTIONS = new Set([
   "alternative forms", "etymology", "pronunciation", "usage notes",
   "derived terms", "descendants", "translations", "see also", "anagrams",
@@ -85,8 +79,18 @@ export async function lookupWord(
   return null;
 }
 
+interface WiktionaryQueryPage {
+  title?: string;
+  extract?: string;
+  missing?: boolean;
+}
+
+interface WiktionaryApiResponse {
+  query?: { pages?: Record<string, WiktionaryQueryPage> };
+}
+
 function parseWiktionaryResponse(
-  data: any,
+  data: WiktionaryApiResponse,
   languageCode: string
 ): DictionaryResult | null {
   const pages = data.query?.pages;
@@ -97,7 +101,9 @@ function parseWiktionaryResponse(
   const pageId = Object.keys(pages)[0];
   if (!pageId || pageId === "-1" || pages[pageId].missing) {
     if (languageCode !== "zh") {
-      return parseWiktionaryResponse(data, languageCode);
+      // Fall back to the Chinese extract format once, then stop — the previous
+      // code recursed with identical arguments (guaranteed stack overflow).
+      return parseWiktionaryResponse(data, "zh");
     }
     return null;
   }
@@ -262,7 +268,7 @@ function parseEnglishWiktionaryExtract(
           continue;
         }
 
-        let cleaned = line
+        const cleaned = line
           .replace(/^["\u201c\u201d']+|["\u201c\u201d']+$/g, "")
           .replace(/[\u2018\u2019]/g, "'")
           .replace(/\s+/g, " ")
