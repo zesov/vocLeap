@@ -114,8 +114,9 @@ test.describe("Review cross-device sync", () => {
     const apiDataB = await apiResB.json();
     console.log("[Test] Device B API on load:", apiDataB);
 
-    // Should resume at Card 2 (index 1)
-    await expect(pageB.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
+    // Should resume at the 2nd word of the session (the session-scoped card
+    // header counts restored progress; the batch counter restarts per page).
+    await expect(pageB.getByText(/New Word 2 of/)).toBeVisible({ timeout: 10000 });
 
     await contextA.close();
     await contextB.close();
@@ -151,7 +152,7 @@ test.describe("Review cross-device sync", () => {
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
     await signIn(pageB, email);
-    await expect(pageB.getByText(/Card 2 of/)).toBeVisible({ timeout: 10000 });
+    await expect(pageB.getByText(/New Word 2 of/)).toBeVisible({ timeout: 10000 });
 
     // Now test new queue: add more words and check they appear
     await addWordsViaAPI(pageA, [

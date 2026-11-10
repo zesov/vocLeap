@@ -98,9 +98,10 @@ test.describe("Review queue semantics", () => {
 
     await page.reload();
 
-    // One card was already reviewed: two remain, total session length is 3.
+    // One card was already reviewed: the session counter shows 2 of 3; the
+    // batch counter shows the position inside the refetched queue (2 words).
     await expect(page.getByText(/New Word 2 of 3/)).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText(/Card 2 of 3/)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Card 1 of 2", { exact: true })).toBeVisible({ timeout: 10000 });
 
     const stats = await (await page.request.get("/api/reviews?action=stats")).json();
     expect(stats.newWords).toBe(2);
@@ -150,8 +151,11 @@ test.describe("Review queue semantics", () => {
 
     await page.goto("/review");
     // The header must show the full session backlog (done + live remaining
-    // from stats, uncapped), not just restored-count + fetched-queue size.
+    // from stats, uncapped); the top bar shows the fetched page (capped at 50).
     await expect(page.getByText("New Word 1 of 60", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText("Card 1 of 50", { exact: true })).toBeVisible({
       timeout: 10000,
     });
 
@@ -169,6 +173,9 @@ test.describe("Review queue semantics", () => {
 
     await page.reload();
     await expect(page.getByText("New Word 2 of 60", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText("Card 1 of 50", { exact: true })).toBeVisible({
       timeout: 10000,
     });
   });
