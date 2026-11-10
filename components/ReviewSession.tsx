@@ -850,7 +850,7 @@ export function ReviewSession() {
   }
 
   const currentPosition = reviewedBeforeBatch + currentIndex + 1;
-  const progress = sessionBacklog > 0 ? (currentPosition / sessionBacklog) * 100 : 0;
+  const progress = reviews.length > 0 ? ((currentIndex + 1) / reviews.length) * 100 : 0;
   const nextIntervals =
     intervalsByWord.get(currentReview.wordId) ?? getNextIntervals(currentReview);
 
@@ -867,7 +867,7 @@ export function ReviewSession() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 mb-2">
-        <span>Card {currentIndex + 1} of {reviews.length}</span>
+        <span>Card {currentIndex + 1} / {reviews.length}</span>
         <span>{Math.round(progress)}%</span>
         <span className="text-blue-600 dark:text-blue-400 font-medium">{mode === "review" ? "Review" : "New Words"}</span>
       </div>
