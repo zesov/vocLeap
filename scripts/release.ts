@@ -97,7 +97,7 @@ function extractReleaseNotes(content: string, version: string): string {
 async function runCommand(cmd: string, dryRun: boolean): Promise<void> {
   console.log(dryRun ? `[DRY RUN] $ ${cmd}` : `$ ${cmd}`);
   if (!dryRun) {
-    await $`${cmd}`.quiet();
+    await $`bash -c ${cmd}`.quiet();
   }
 }
 
