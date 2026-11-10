@@ -4,6 +4,7 @@ import {
   type FsrsState,
   type ReviewStateSnapshot,
 } from "@/lib/srs/fsrs";
+import { uuidv7 } from "@/lib/uuid";
 
 export type SrsAlgorithm = "sm2" | "fsrs";
 
@@ -22,6 +23,8 @@ export interface Word {
   audioUrl?: string;
   sourceLanguage: string;
   targetLanguage: string;
+  uuid?: string;
+  deletedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -41,6 +44,7 @@ export interface Review {
 
 export interface ReviewHistory {
   id?: number;
+  uuid?: string;
   wordId: number;
   rating: number;
   previousEaseFactor: number;
@@ -75,6 +79,7 @@ interface ReviewRow {
 
 interface ReviewHistoryRow {
   id: number;
+  uuid: string | null;
   word_id: number;
   rating: number;
   previous_ease_factor: number;
@@ -101,6 +106,8 @@ interface WordColumns {
 
 type WordRow = WordColumns & {
   id: number;
+  uuid: string | null;
+  deleted_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -157,6 +164,8 @@ function wordFromRow(r: WordRow): Word {
     audioUrl: r.audio_url ?? undefined,
     sourceLanguage: r.source_language,
     targetLanguage: r.target_language,
+    uuid: r.uuid ?? undefined,
+    deletedAt: r.deleted_at ?? undefined,
     createdAt: r.created_at ?? undefined,
     updatedAt: r.updated_at ?? undefined,
   };
@@ -167,11 +176,12 @@ export async function createWord(
   word: Omit<Word, "id" | "createdAt" | "updatedAt">
 ): Promise<number> {
   const stmt = db.prepare(`
-    INSERT INTO words (user_id, word, translation, definitions, examples, phonetic, audio_url, source_language, target_language)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO words (user_id, uuid, word, translation, definitions, examples, phonetic, audio_url, source_language, target_language)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = await stmt.run(
     userId,
+    uuidv7(),
     word.word,
     word.translation,
     JSON.stringify(word.definitions),
@@ -188,7 +198,7 @@ export async function getWordById(
   userId: number,
   id: number
 ): Promise<Word | null> {
-  const stmt = db.prepare("SELECT * FROM words WHERE id = ? AND user_id = ?");
+  const stmt = db.prepare("SELECT * FROM words WHERE id = ? AND user_id = ? AND deleted_at IS NULL");
   const r = toRow<WordRow>(await stmt.get(id, userId));
   return r ? wordFromRow(r) : null;
 }
@@ -197,7 +207,7 @@ export async function getWordByText(
   userId: number,
   word: string
 ): Promise<Word | null> {
-  const stmt = db.prepare("SELECT * FROM words WHERE word = ? AND user_id = ?");
+  const stmt = db.prepare("SELECT * FROM words WHERE word = ? AND user_id = ? AND deleted_at IS NULL");
   const r = toRow<WordRow>(await stmt.get(word, userId));
   return r ? wordFromRow(r) : null;
 }
@@ -224,7 +234,9 @@ export async function getAllWords(
   offset: number = 0,
   sort: WordSort = "date_desc"
 ): Promise<{ words: Word[]; total: number }> {
-  const countStmt = db.prepare("SELECT COUNT(*) as count FROM words WHERE user_id = ?");
+  const countStmt = db.prepare(
+    "SELECT COUNT(*) as count FROM words WHERE user_id = ? AND deleted_at IS NULL"
+  );
   const totalRow = await countStmt.get(userId);
   const total = Number(totalRow?.count ?? 0);
 
@@ -232,7 +244,7 @@ export async function getAllWords(
     ? WORD_SORT_CLAUSES[sort]
     : WORD_SORT_CLAUSES.date_desc;
   const stmt = db.prepare(
-    `SELECT * FROM words WHERE user_id = ? ORDER BY ${orderBy} LIMIT ? OFFSET ?`
+    `SELECT * FROM words WHERE user_id = ? AND deleted_at IS NULL ORDER BY ${orderBy} LIMIT ? OFFSET ?`
   );
   const rows = toRows<WordRow>(await stmt.all(userId, limit, offset));
   return {
@@ -294,7 +306,11 @@ export async function deleteWord(
   userId: number,
   id: number
 ): Promise<boolean> {
-  const stmt = db.prepare("DELETE FROM words WHERE id = ? AND user_id = ?");
+  const stmt = db.prepare(`
+    UPDATE words
+    SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+  `);
   const result = await stmt.run(id, userId);
   return result.changes > 0;
 }
@@ -304,7 +320,7 @@ export async function assertWordOwned(
   wordId: number
 ): Promise<boolean> {
   const row = await db
-    .prepare("SELECT id FROM words WHERE id = ? AND user_id = ?")
+    .prepare("SELECT id FROM words WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
     .get(wordId, userId);
   return row !== null;
 }
@@ -384,7 +400,7 @@ export async function getReview(
     SELECT r.*
     FROM reviews r
     JOIN words w ON w.id = r.word_id
-    WHERE r.word_id = ? AND w.user_id = ?
+    WHERE r.word_id = ? AND w.user_id = ? AND w.deleted_at IS NULL
   `);
   const r = toRow<ReviewRow>(await stmt.get(wordId, userId));
   if (!r) return null;
@@ -410,7 +426,7 @@ export async function getDueReviews(
     SELECT r.*, w.word, w.translation, w.definitions, w.examples, w.phonetic, w.audio_url, w.source_language, w.target_language
     FROM reviews r
     JOIN words w ON r.word_id = w.id
-    WHERE r.next_review_date <= datetime('now') AND w.user_id = ?
+    WHERE r.next_review_date <= datetime('now') AND w.user_id = ? AND w.deleted_at IS NULL
     ORDER BY r.next_review_date ASC
     LIMIT ?
   `);
@@ -448,7 +464,7 @@ export async function getNewWords(
     SELECT w.id as word_id, w.word, w.translation, w.definitions, w.examples, w.phonetic, w.audio_url, w.source_language, w.target_language, w.created_at, w.updated_at
     FROM words w
     LEFT JOIN reviews r ON w.id = r.word_id
-    WHERE r.word_id IS NULL AND w.user_id = ?
+    WHERE r.word_id IS NULL AND w.user_id = ? AND w.deleted_at IS NULL
     ORDER BY w.created_at DESC
     LIMIT ?
   `);
@@ -489,13 +505,17 @@ export async function getReviewStats(userId: number): Promise<{
       (
         SELECT COUNT(*) FROM reviews r
         JOIN words w ON w.id = r.word_id
-        WHERE w.user_id = ? AND r.next_review_date <= datetime('now')
+        WHERE w.user_id = ? AND w.deleted_at IS NULL
+          AND r.next_review_date <= datetime('now')
       ) AS due,
-      (SELECT COUNT(*) FROM words w WHERE w.user_id = ?) AS total,
+      (
+        SELECT COUNT(*) FROM words w
+        WHERE w.user_id = ? AND w.deleted_at IS NULL
+      ) AS total,
       (
         SELECT COUNT(*) FROM words w
         LEFT JOIN reviews r ON w.id = r.word_id
-        WHERE w.user_id = ? AND r.word_id IS NULL
+        WHERE w.user_id = ? AND w.deleted_at IS NULL AND r.word_id IS NULL
       ) AS new_words
   `);
   const row = await stmt.get(userId, userId, userId);
@@ -513,10 +533,11 @@ export async function addReviewHistory(
   }
 ): Promise<void> {
   const stmt = db.prepare(`
-    INSERT INTO review_history (word_id, rating, previous_ease_factor, previous_interval, previous_repetitions, new_ease_factor, new_interval, new_repetitions, algorithm, snapshot)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO review_history (uuid, word_id, rating, previous_ease_factor, previous_interval, previous_repetitions, new_ease_factor, new_interval, new_repetitions, algorithm, snapshot)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   await stmt.run(
+    uuidv7(),
     history.wordId,
     history.rating,
     history.previousEaseFactor,
@@ -538,12 +559,13 @@ export async function getReviewHistory(
     SELECT rh.*
     FROM review_history rh
     JOIN words w ON w.id = rh.word_id
-    WHERE rh.word_id = ? AND w.user_id = ?
+    WHERE rh.word_id = ? AND w.user_id = ? AND w.deleted_at IS NULL
     ORDER BY rh.reviewed_at DESC
   `);
   const rows = toRows<ReviewHistoryRow>(await stmt.all(wordId, userId));
   return rows.map((r) => ({
     id: r.id,
+    uuid: r.uuid ?? undefined,
     wordId: r.word_id,
     rating: r.rating,
     previousEaseFactor: r.previous_ease_factor,
@@ -579,7 +601,7 @@ export async function getReviewHistoryPage(
     SELECT COUNT(*) as count
     FROM review_history rh
     JOIN words w ON rh.word_id = w.id
-    WHERE w.user_id = ?
+    WHERE w.user_id = ? AND w.deleted_at IS NULL
   `);
   const totalRow = await countStmt.get(userId);
   const total = Number(totalRow?.count ?? 0);
@@ -588,7 +610,7 @@ export async function getReviewHistoryPage(
     SELECT rh.*, w.word, w.translation
     FROM review_history rh
     JOIN words w ON rh.word_id = w.id
-    WHERE w.user_id = ?
+    WHERE w.user_id = ? AND w.deleted_at IS NULL
     ORDER BY rh.reviewed_at DESC, rh.id DESC
     LIMIT ? OFFSET ?
   `);
@@ -600,6 +622,7 @@ export async function getReviewHistoryPage(
     total,
     entries: rows.map((r) => ({
       id: r.id,
+      uuid: r.uuid ?? undefined,
       wordId: r.word_id,
       rating: r.rating,
       previousEaseFactor: r.previous_ease_factor,
