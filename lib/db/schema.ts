@@ -33,7 +33,12 @@ const SCHEMA_INSPECT_SQL = `
     (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_reviews_next_review') AS idx_reviews_next_review,
     (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_review_history_word') AS idx_review_history_word,
     (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_review_history_reviewed') AS idx_review_history_reviewed,
-    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_words_user') AS idx_words_user
+    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_words_user') AS idx_words_user,
+    (SELECT COUNT(*) FROM pragma_table_info('words') WHERE name = 'uuid') AS words_uuid,
+    (SELECT COUNT(*) FROM pragma_table_info('words') WHERE name = 'deleted_at') AS words_deleted_at,
+    (SELECT COUNT(*) FROM pragma_table_info('review_history') WHERE name = 'uuid') AS review_history_uuid,
+    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_words_uuid') AS idx_words_uuid,
+    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_review_history_uuid') AS idx_review_history_uuid
 `;
 
 const SCHEMA_FLAG_KEYS = [
@@ -57,6 +62,11 @@ const SCHEMA_FLAG_KEYS = [
   "idx_review_history_word",
   "idx_review_history_reviewed",
   "idx_words_user",
+  "words_uuid",
+  "words_deleted_at",
+  "review_history_uuid",
+  "idx_words_uuid",
+  "idx_review_history_uuid",
 ] as const;
 
 type SchemaFlags = Partial<Record<(typeof SCHEMA_FLAG_KEYS)[number], number>>;
@@ -156,6 +166,8 @@ const INDEX_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_reviews_next_review ON reviews(next_review_date)`,
   `CREATE INDEX IF NOT EXISTS idx_review_history_word ON review_history(word_id)`,
   `CREATE INDEX IF NOT EXISTS idx_review_history_reviewed ON review_history(reviewed_at DESC, id DESC)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_words_uuid ON words(uuid)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_review_history_uuid ON review_history(uuid)`,
 ];
 
 /**
@@ -196,6 +208,15 @@ function buildDdlStatements(flags: SchemaFlags): string[] {
   if (!flag(flags, "review_history_snapshot")) {
     statements.push(`ALTER TABLE review_history ADD COLUMN snapshot TEXT`);
   }
+  if (!flag(flags, "words_uuid")) {
+    statements.push(`ALTER TABLE words ADD COLUMN uuid TEXT`);
+  }
+  if (!flag(flags, "words_deleted_at")) {
+    statements.push(`ALTER TABLE words ADD COLUMN deleted_at DATETIME`);
+  }
+  if (!flag(flags, "review_history_uuid")) {
+    statements.push(`ALTER TABLE review_history ADD COLUMN uuid TEXT`);
+  }
 
   statements.push(...INDEX_STATEMENTS);
 
@@ -228,6 +249,9 @@ const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: string }> =
   { table: "reviews", column: "fsrs_last_review", ddl: `ALTER TABLE reviews ADD COLUMN fsrs_last_review DATETIME` },
   { table: "review_history", column: "algorithm", ddl: `ALTER TABLE review_history ADD COLUMN algorithm TEXT NOT NULL DEFAULT 'sm2'` },
   { table: "review_history", column: "snapshot", ddl: `ALTER TABLE review_history ADD COLUMN snapshot TEXT` },
+  { table: "words", column: "uuid", ddl: `ALTER TABLE words ADD COLUMN uuid TEXT` },
+  { table: "words", column: "deleted_at", ddl: `ALTER TABLE words ADD COLUMN deleted_at DATETIME` },
+  { table: "review_history", column: "uuid", ddl: `ALTER TABLE review_history ADD COLUMN uuid TEXT` },
 ];
 
 async function migrateColumnsBestEffort(db: DatabaseAdapter): Promise<void> {
