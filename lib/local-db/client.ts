@@ -62,7 +62,7 @@ let worker: Worker | null = null;
 let handle: LocalDbHandle | null = null;
 let pending = new Map<number, PendingCall>();
 let nextId = 1;
-let listeners = new Set<(state: LocalDbState) => void>();
+const listeners = new Set<(state: LocalDbState) => void>();
 let initPromise: Promise<LocalDbState> | null = null;
 let initializedFor: number | null = null;
 let releaseLock: (() => void) | null = null;
