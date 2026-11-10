@@ -87,7 +87,7 @@ describe("runSyncOnce", () => {
 
     await runSyncOnce(db, { fetchImpl });
     expect(isSyncPaused()).toBe(true);
-    expect(await getPendingOps(db).length).toBe(1);
+    expect((await getPendingOps(db)).length).toBe(1);
 
     const status = getSyncStatus();
     expect(status.phase).toBe("paused");
