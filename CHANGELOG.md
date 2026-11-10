@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-10
+
 ### Added
 - **Release automation script** (`scripts/release.ts`) — Auto-bump version with `--patch`, `--minor`, `--major` flags, explicit version support, dry-run preview, updates CHANGELOG.md and package.json, creates annotated git tags and GitHub Releases
 - **License compliance documentation** — Added `LICENSES.md` with full third-party license audit; README links to it for LGPL-3.0-or-later (`sharp`) transparency
