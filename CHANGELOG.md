@@ -1,209 +1,208 @@
 # Changelog
 
-All notable changes to risk-frontend are documented in this file.
+All notable changes to **Vocleap** are documented in this file.
 
-## [2026-11-09] API Latency: Region Colocation & Explicit Schema Migrations
-- Diagnosed production API latency (5.9–8.6s): Vercel functions ran in `iad1` (US East, the default) while Turso lives in `aws-ap-southeast-1` (Singapore), so every SQL statement was a ~250 ms cross-Pacific HTTP round trip; `init.ts` compounded this by running 19 sequential schema DDL/PRAGMA round trips on every serverless cold start before the first real query
-- `vercel.json` pins the function region to `sin1` (Singapore), colocating the functions with Turso — per-query latency drops from ~250 ms to single-digit ms, and warm API responses from hundreds of ms to tens
-- Schema migration is no longer an automatic cold-start step; it is explicit and idempotent:
-  - `lib/db/schema.ts` holds the DDL and `ensureSchema()`: one inspect query gathers all table/column/index flags, does nothing when the schema is current, and otherwise runs only the missing DDL as a single atomic batch (one HTTP request on Turso)
-  - `lib/db/adapter.ts` holds the backend adapters and `createAdapter()`; `better-sqlite3` is imported lazily so Turso deployments never bundle/dlopen the native module
-  - `lib/db/init.ts` is now a thin singleton: local mode converges the schema once per process (in-process, free, keeps `next dev` zero-setup); Turso mode is a deliberate no-op — a cold start pays zero DB round trips for schema checks
-  - New `bun run migrate` (`scripts/migrate.ts`) applies migrations explicitly: prints the target database, runs one inspect + one batch, and reports `Schema already up to date` or the executed statement count; forgetting to migrate fails loudly with `no such table` in the Vercel logs
-- `getReviewStats` computes its three counts (due / total / new) in one query with subqueries instead of three sequential round trips
-- README documents the schema-migration workflow (local auto, Turso explicit before deploying)
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2026-11-07] Switchable SRS Algorithm (SM-2 / FSRS)
-- Users can switch their scheduling algorithm between SM-2 and FSRS via a NavBar toggle; the choice is stored per user (`users.srs_algorithm`) through `GET/PUT /api/settings`
-- FSRS uses `ts-fsrs` v6 with short-term learning steps disabled, so scheduling stays day-granular like SM-2
-- FSRS card state (stability, difficulty, state, lapses, reps) persists in new `reviews` columns; the FSRS due date writes into the shared `next_review_date`, keeping due-queue queries and stats algorithm-agnostic
-- Switching is non-destructive: the first FSRS review of a word seeds memory state from its SM-2 state (interval → stability at 0.9 retention, ease factor → difficulty via the fsrs4anki conversion); switching back to SM-2 resumes SM-2's own frozen columns
-- Rating buttons now preview intervals computed server-side (`GET /api/reviews?action=intervals`) with the user's active algorithm, replacing the client-side SM-2-only calculation; the mobile menu replaces the native select with a segmented control (fixes native dropdown popup mispositioning)
-- `review_history` records which algorithm produced each entry plus a before/after FSRS snapshot; the history table shows `S …/D …` memory state for FSRS rows instead of the meaningless ease-factor zeros
-- Startup migration adds all new columns idempotently (works on both the local SQLite and Turso backends); existing data is untouched
+---
 
-## [2026-11-06] Fast Page Navigation
-- NavBar now renders from the route-group layouts (`app/(public)/layout.tsx`, `app/(app)/layout.tsx`) and receives the signed-in user from the server, so it persists across client-side navigations within a group instead of remounting on every page change
-- Pages no longer mount their own NavBar; public pages (home, dictionary, login, signup) moved into the `(public)` route group with a shared layout, protected pages stay in `(app)`
-- Removed the per-navigation `/api/auth/me` fetch from NavBar — the double auth check (server layout + client fetch) on every route change is gone
-- Login/signup now also set a 5-minute `vocleap_session_cache` cookie; `getCurrentUser()` serves the cached user before querying the sessions table, so repeat navigations skip the DB query
-- `getCurrentUser()` keeps `await connection()`: session checks compare an expiry against the current time, so they must render at request time (removing it triggers `blocking-prerender-current-time`; `Date.now()` hidden in helpers is still caught by the static analyzer)
-
-## [2026-11-06] Review-state Payload Bounded by the Queue
-- `GET /api/review-state?allDevices=true` now mirrors the queue's word selection (due words for `review`, never-reviewed for `new`) and caps results at `limit` (default 50, max 100) instead of returning every accumulated state row; positions for words outside the queue were fetched, merged, and stored but never used for ordering
-- The client passes `limit=50` explicitly, matching the queue fetch, so the returned word set aligns exactly with the queue
-- Verified with a 54-state test account: the endpoint returns exactly the 50 queue words; session meta (`currentIndex`/`reviewedCount`) is unaffected
-
-## [2026-11-05] Words Phonetic Display
-- Words page cards now show each saved word's phonetic under the word, above the translation
-- Bare Google Translate phonetics get wrapped as `/…/`; already-delimited Wiktionary phonetics are shown as-is
-- Words without a phonetic render no extra line
-- Added E2E coverage for phonetic display
-
-## [2026-11-05] Review History Pagination & Words Sorting
-- `GET /api/reviews?action=history` now accepts `limit`/`offset` and returns `{ history, total, limit, offset, hasMore }` instead of every record
-- Review history page loads 30 entries at a time as the table scrolls, with a retry state on failure
-- Added a `review_history(reviewed_at DESC, id DESC)` index so history paging stays stable when rows share a timestamp
-- `GET /api/words` accepts `sort=date_desc|date_asc|alpha_asc|alpha_desc` (default `date_desc`) and falls back safely for unknown values
-- Words page has a Sort by control (Newest first, Oldest first, A–Z, Z–A); changing it resets the paginated list
-- Refined the Sort by dropdown: 40px height aligned with Import Words, sort icon, custom chevron, and full-width stacking on mobile
-- Replaced the native `<select>` so the options popup is exactly as wide as the trigger on mobile; the listbox also supports arrow keys, Enter, Escape, Home/End, and click-outside dismissal
-- Added E2E coverage for history paging and words sorting
-
-## [2026-11-05] Review Interval Preview
-- Rating buttons now show the interval each rating would schedule, calculated from the card's current SM-2 state before rating
-- Keep the rating-button spinner centered and the button height stable while a review is submitting
-- The card footer now shows `Last interval` instead of the misleading `Next review in`
-- Fixed `formatInterval()` pluralisation (`1 week`, `1 month`, `1 year`)
-- Review E2E coverage still passes
-
-## [2026-11-05] Review-state Payload & Request Dedupe
-- `GET /api/review-state?allDevices=true` now returns the latest state per word across devices instead of every row; a real account dropped from 1,950 to 297 review states (~220 KB → ~34 KB)
-- Cross-device session meta is fetched in one query instead of one query per device
-- `POST /api/review-state` now replaces the device's saved slice and prunes words that left the queue, so `user_review_state` stops growing with every session
-- Removed redundant `/api/auth/me` preflight calls from the review session; the protected layout enforces auth and review submission handles a 401 directly
-- Fixed the initial sync effect double-fetching `/api/reviews` when the 3s fallback fired and `synced` then flipped to true
-- Review sync E2E coverage still passes (queue semantics and cross-device resume)
-
-## [2026-11-04] Review Queue Semantics
-- `GET /api/reviews?action=all` now applies the same filter as `review`/`new` (due words only, or never-reviewed words only) instead of returning every word
-- The review page always loads the queue for the current mode and only uses synced positions to restore ordering, so completed cards are no longer re-queued on reload
-- Resume position is tracked by the reviewed count, keeping "Card X of Y" correct when reviewed words drop out of the queue
-- Synced positions are rebased to the current queue, keeping the `review-state` payload bounded by session size
-- Clearing review state now also clears the session meta, and finishing a session resets progress instead of inheriting a stale count
-- Fixed merged positions ignoring position `0`
-- Added E2E coverage for queue filtering, mid-session reload, and finished sessions
-
-## [2026-11-04] Sign-in Navigation & Review-state Sync
-- Sign-in no longer silently fails when a browser fills credentials before React hydrates: auth inputs are uncontrolled and submission reads `FormData`, so typed values are never reset to empty
-- Successful sign-in/sign-up now performs a full navigation to `next`, guaranteeing the fresh session cookie is seen by the proxy and protected layout
-- Signed-in visitors to `/login` or `/signup` are redirected to `next` (default `/review`) instead of being shown the form again
-- The auth form falls back to a POST of the current URL before hydration, so credentials never end up in the query string
-- `POST /api/review-state` batches positions into one multi-row UPSERT: a 50-word sync against Turso drops from ~5.7s to ~200ms
-- Review session checks `/api/auth/me` before fetching and falls back to a UUID v4 generator when `crypto.randomUUID()` is unavailable
-- Skipped the CSRF origin check in development and removed a duplicated `initDatabase` import in the review-state route
-
-## [2026-11-03] Sign-in Redirect
-- Signed-out visits to `/review`, `/review-history`, or `/words` now redirect to `/login?next=<path+query>`, and signing in returns to the requested page
-- Added `proxy.ts` as an optimistic auth gate; the protected layout still validates the session server-side
-- `/signup` now honours `next`, and the login/signup switch links preserve the destination
-- Centralised `safeNext()` validation (rejects protocol-relative and backslash paths) and the `SESSION_COOKIE` constant
-- Added E2E coverage for redirecting back after sign-in
-
-## [2026-11-03] New Words Queue Fix
-- Saving or importing a word no longer creates a placeholder `reviews` row, so `GET /api/reviews?action=stats` reports `newWords` correctly and never-reviewed words are no longer counted as due
-- `GET /api/reviews?action=all&mode=new` now includes never-reviewed words so the new-word queue can be restored across devices
-- `stats.total` now counts saved words instead of review rows
-- Review page decrements `newWords` immediately after rating a card in New Words mode
-- Added `bun run reset:unreviewed` to delete placeholder review rows (`last_reviewed IS NULL`, no history) left by earlier versions; run once on existing databases
-- Updated cross-device sync E2E tests for the new-word queue semantics
-
-## [2026-11-03] Multi-user Accounts
-- Added email + password accounts with server-side sessions (`users`, `sessions`); passwords use Node scrypt, session cookies are HttpOnly/SameSite=Lax and stored as SHA-256 hashes
-- Added `/login`, `/signup`, `/api/auth/{signup,login,logout,me}`; NavBar shows the signed-in email and a sign-out action
-- `words` now belongs to a user (`words.user_id`, `UNIQUE(user_id, word)`); `reviews` and `review_history` are isolated through a `words` join
-- `/review`, `/words`, `/review-history` and the words/reviews APIs require a session; `/dictionary` stays public and prompts sign-in on save
-- Added `bun run migrate:multiuser` (idempotent, local + Turso, rebuilds `words` atomically without disabling foreign keys) and `bun run claim-owner` for manual recovery
-- The first account with `OWNER_EMAIL` claims all pre-existing words and review history
-- Playwright now runs on its own port and test database; added auth/isolation E2E coverage and fixed the stale dictionary spec
-
-## [2024-11-02] Vocleap Next.js PWA
+## [Unreleased]
 
 ### Added
-- **Wiktionary Dictionary** - Word lookup with translations, definitions, examples, and phonetics from Wiktionary (multilingual: EN, ZH, JA, KO, FR, DE, ES, RU) at `/dictionary`
-- **Spaced Repetition System (SM-2)** - Save words and review them using the SuperMemo-2 algorithm at `/review`
-- **SQLite Storage** - Persistent local storage with better-sqlite3 for words and review data
-- **Next.js PWA** - Progressive Web App capabilities with service worker, offline support, and install prompt
-- **Full API Layer** - REST APIs for translate, words management, and reviews
-- **Component Library** - UI components including Button, Input, Select, and Card
-- **Complete Navigation** - Main pages for dictionary, review, and word management
-- **Offline Functionality** - Works without network via service worker caching
-- **E2E Tests** - Playwright tests for dictionary lookup functionality
-- **Import from Google Translate** - Import saved translations into `/words` via tab-separated, JSON, or colon-separated text formats
+- Top bar progress counter now matches card title (session-based) while keeping page counter for pagination context
+
+### Fixed
+- Progress percentage now calculates from current page position instead of session backlog to match page counter
+
+---
+
+## [0.6.0] - 2026-11-09
+
+### Added
+- **Explicit schema migrations** — `bun run migrate` applies idempotent migrations (one inspect + one atomic batch) for both local SQLite and Turso; local mode still auto-converges on dev
+- **Region colocation** — Vercel functions pinned to `sin1` (Singapore) to colocate with Turso (`aws-ap-southeast-1`), dropping per-query latency from ~250 ms to single-digit ms
+- **Single-query stats** — `getReviewStats` now computes due/total/new in one query with subqueries (was 3 round trips)
 
 ### Changed
-- **Translation source** - Replaced Google Translate API with Wiktionary API (`lib/dictionary/wiktionaryApi.ts`) for reliable multilingual dictionary lookups
-- **Translation route** - `app/api/translate/route.ts` now queries Wiktionary with retry logic (3 attempts, exponential backoff) for rate limit resilience
-- **Words page** - Fixed `JSON.parse()` bug on `definitions` field, added "← Home" link
-- **Shared navigation** - Extracted nav header into `components/NavBar.tsx`, used across home, dictionary, review, and words pages for consistent UI
-- **Page titles** - Page titles rendered through `NavBar` title prop for consistent heading styling
+- Schema migration moved out of cold-start path: `lib/db/init.ts` is now a thin singleton; Turso mode pays zero DB round trips on cold start
+- DB adapter split: `lib/db/schema.ts` (DDL + `ensureSchema`), `lib/db/adapter.ts` (backends + `createAdapter`), lazy `better-sqlite3` import so Turso builds never bundle native module
+- `vercel.json` function region pinned to `sin1`
 
-### Technical Details
-- Built with Next.js 16.4.3, React 19, Tailwind CSS 4
-- Dependencies: next-pwa, better-sqlite3, idb, TypeScript
-- Wiktionary-based dictionary API with CJK translation extraction
-- SM-2 spaced repetition algorithm for optimal vocabulary retention
+### Fixed
+- Cold-start latency spikes (5.9–8.6 s → tens of ms) caused by 19 sequential schema DDL/PRAGMA round trips across the Pacific
+
+---
+
+## [0.5.0] - 2026-11-07
+
+### Added
+- **Switchable SRS algorithm** — Per-user choice between SM-2 (default) and FSRS via NavBar toggle, persisted in `users.srs_algorithm`
+- **FSRS support** — Powered by `ts-fsrs` v6 with day-granular scheduling (short-term steps disabled); state stored in new `reviews` columns (`stability`, `difficulty`, `fsrs_state`, `lapses`, `reps`)
+- **Interval preview** — Rating buttons show server-computed intervals (`GET /api/reviews?action=intervals`) for the active algorithm
+- **Algorithm-aware history** — `review_history` records algorithm per entry + before/after FSRS snapshot; history table renders `S …/D …` memory state for FSRS rows
+
+### Changed
+- Non-destructive switching: first FSRS review seeds from SM-2 state (interval → stability @ 0.9 retention, ease factor → difficulty via fsrs4anki conversion); switching back resumes frozen SM-2 columns
+- Mobile rating menu replaced native `<select>` with segmented control (fixes dropdown mispositioning)
+- Startup migration adds all FSRS columns idempotently on both backends
+
+---
+
+## [0.4.0] - 2026-11-06
+
+### Added
+- **Fast page navigation** — NavBar rendered from route-group layouts (`(public)` / `(app)`), persists across client-side navigations without remount
+- **Auth caching** — 5-minute `vocleap_session_cache` cookie; `getCurrentUser()` serves cached user before querying sessions table
+
+### Changed
+- Removed per-navigation `/api/auth/me` fetch from NavBar (was double auth check on every route change)
+- Public pages (home, dictionary, login, signup) moved into `(public)` route group with shared layout; protected pages stay in `(app)`
+
+### Fixed
+- `getCurrentUser()` keeps `await connection()` — session expiry checks must render at request time to avoid `blocking-prerender-current-time`
+
+---
+
+## [0.3.0] - 2026-11-05
+
+### Added
+- **Phonetic display on Words page** — Each card shows phonetic under the word; bare Google Translate phonetics wrapped as `/…/`, Wiktionary phonetics shown as-is
+- **Review history pagination** — `GET /api/reviews?action=history` accepts `limit`/`offset`, returns `{ history, total, limit, offset, hasMore }`; infinite scroll loads 30 entries at a time
+- **Words sorting** — `GET /api/words` accepts `sort=date_desc|date_asc|alpha_asc|alpha_desc`; Words page has Sort by control with custom dropdown (keyboard accessible, mobile-friendly)
+- **Review interval preview** — Rating buttons show scheduled interval before commit; card footer shows `Last interval` instead of misleading `Next review in`
+- **E2E coverage** — Phonetic display, history paging, words sorting
+
+### Changed
+- `review_history(reviewed_at DESC, id DESC)` index for stable paging when rows share timestamp
+- `formatInterval()` pluralisation fixed (`1 week`, `1 month`, `1 year`)
+
+---
+
+## [0.2.0] - 2026-11-04
+
+### Added
+- **Review queue semantics** — `GET /api/reviews?action=all` now applies same filter as `review`/`new` (due only / never-reviewed only); queue loads for current mode, synced positions only restore ordering
+- **Resume position by reviewed count** — "Card X of Y" stays correct when reviewed words drop out of queue
+- **Session completion resets progress** — Clearing review state also clears session meta; finished sessions reset instead of inheriting stale count
+
+### Fixed
+- Merged positions now respect position `0`
+- Completed cards no longer re-queued on reload
+- Synced positions rebased to current queue (payload bounded by session size)
+
+---
+
+## [0.1.0] - 2026-11-03
+
+### Added
+- **Multi-user accounts** — Email/password with scrypt-hashed passwords, HttpOnly/SameSite=Lax session cookies stored as SHA-256 hashes
+- **Auth endpoints** — `/login`, `/signup`, `/api/auth/{signup,login,logout,me}`; NavBar shows signed-in email + sign-out
+- **Data isolation** — `words.user_id` with `UNIQUE(user_id, word)`; `reviews` and `review_history` isolated via words join
+- **Protected routes** — `/review`, `/words`, `/review-history` and words/reviews APIs require session; `/dictionary` stays public (prompts sign-in on save)
+- **Migration tooling** — `bun run migrate:multiuser` (idempotent, rebuilds `words` atomically), `bun run claim-owner` for manual recovery; first `OWNER_EMAIL` account claims pre-existing data
+- **Playwright isolation** — Tests run on dedicated port + test database; auth/isolation E2E coverage
+
+### Fixed
+- Sign-in no longer fails when browser autofills before hydration (uncontrolled inputs + FormData submission)
+- Successful auth performs full navigation to `next`, guaranteeing fresh session cookie seen by proxy/layout
+- Signed-in visitors to `/login` or `/signup` redirected to `next` (default `/review`)
+- `POST /api/review-state` batches positions into one multi-row UPSERT (50-word sync: ~5.7 s → ~200 ms)
+- Centralised `safeNext()` validation + `SESSION_COOKIE` constant
+
+---
+
+## [0.0.5] - 2026-11-02
+
+### Added
+- **Dual SQLite backend** — `DB_MODE=local` (better-sqlite3) or `turso` (@libsql/client) via unified async `DatabaseAdapter`; Turso URL defaults to `libsql://your-database-your-org.turso.io`
+- **Wiktionary dictionary** — Multilingual lookup (EN, ZH, JA, KO, FR, DE, ES, RU) at `/dictionary` with translations, definitions, examples, phonetics
+- **SM-2 spaced repetition** — Save words, review at `/review` with Again/Hard/Good/Easy ratings
+- **Next.js PWA** — Service worker, offline support, install prompt via `next-pwa`
+- **Full API layer** — REST endpoints for translate, words, reviews
+- **Component library** — Button, Input, Select, Card primitives
+- **Complete navigation** — Dictionary, Review, Words, History pages
+- **Offline functionality** — Works without network via service worker caching
+- **Import from Google Translate** — Tab-separated, JSON, or colon-separated formats
+- **E2E tests** — Playwright specs for dictionary, review, auth flows
+
+### Changed
+- Translation source: Google Translate API → Wiktionary API with retry logic (3 attempts, exponential backoff)
+- Words page: fixed `JSON.parse()` on `definitions`, added "← Home" link
+- Shared `NavBar` component across all pages with consistent heading styling
+
+### Fixed
+- TypeScript build errors on Vercel (typed row interfaces, `InValue[]` args, `bigint` → `number` coercion, ambient `next-pwa` types)
+- `@types/better-sqlite3` added as devDependency
+- `themeColor` moved from `metadata` to `viewport` export, eliminated build warnings
+
+---
+
+## [0.0.4] - 2026-11-02
+
+### Added
+- **Review history page** — `/review-history` shows full SM-2 history: word, translation, rating, ease factor change, interval, repetitions, reviewed at
+- **History API** — `GET /api/reviews?action=history` returns all history joined with word/translation via `getAllReviewHistory()`
+- **NavBar "History" item** — Vocleap logo now links to `/`
+
+### Fixed
+- `GET /api/reviews?action=history&wordId=X` route ordering (history branch now reachable before generic wordId branch)
+- Review submission: `getReview()` maps snake_case DB columns (`word_id`, `ease_factor`, …) to camelCase
+- Keyboard shortcuts on `/review`: Space toggles Show Answer; 1–4 rate Again/Hard/Good/Easy when answer shown
+- `/api/reviews?action=review` endpoint handling
+- Auto-switch logic: removed premature `sessionComplete=true` when switching review → new words
+
+---
+
+## [0.0.3] - 2026-11-02
+
+### Added
+- **Sign-in redirect** — Signed-out visits to protected routes redirect to `/login?next=<path>`; signing in returns to requested page
+- **Optimistic auth gate** — `proxy.ts` + protected layout server-side validation
+- **E2E coverage** — Redirect after sign-in
+
+### Fixed
+- `/signup` honours `next`; login/signup switch links preserve destination
+
+---
+
+## [0.0.2] - 2026-11-02
+
+### Fixed
+- **New words queue** — Saving/importing no longer creates placeholder `reviews` row; `stats.newWords` now correct, never-reviewed words no longer counted as due
+- `GET /api/reviews?action=all&mode=new` includes never-reviewed words for cross-device restore
+- `stats.total` counts saved words (not review rows)
+- Review page decrements `newWords` immediately after rating in New Words mode
+- `bun run reset:unreviewed` deletes placeholder review rows (`last_reviewed IS NULL`, no history) from earlier versions
+- Cross-device sync E2E tests updated for new-word queue semantics
+
+---
+
+## [0.0.1] - 2024-11-02
+
+### Added
+- Initial Vocleap Next.js PWA release
+- Wiktionary dictionary lookup with multilingual support
+- SM-2 spaced repetition review system
+- SQLite storage with better-sqlite3
+- PWA with service worker, offline support, install prompt
+- Full REST API layer (translate, words, reviews)
+- Component library (Button, Input, Select, Card)
+- Complete navigation (Dictionary, Review, Words pages)
 - Offline-first design with IndexedDB fallback
-- Responsive design with dark mode support
+- Responsive design with dark mode
 - Playwright E2E test configuration
+- Import from Google Translate (tab-separated, JSON, colon-separated)
 
-### Features
-- Look up words with Wiktionary API (multilingual dictionary)
-- Save words for spaced repetition review
-- Review saved words with SM-2 algorithm (Again/Hard/Good/Easy ratings)
-- Works offline as a PWA
-- Install to home screen for mobile access
-- Persistent storage with SQLite
-- E2E testing with Playwright
+---
 
-All features work end-to-end: lookup word → save to SQLite → review via SRS → works offline via PWA.
+## Legend
 
-## [2026-11-02] Review Page Fix
-- Fixed `/api/reviews?action=review` endpoint to handle review mode
-- Fixed ReviewSession auto-switch logic: removed premature `sessionComplete=true` when switching from review to new words mode
-- Review page now correctly displays new words (2008 imported words) when no due reviews exist
-
-## [2026-11-02] Review Submission + Keyboard Shortcuts
-- Fixed `Failed to submit review` error: `getReview()` now maps snake_case DB columns (`word_id`, `ease_factor`, ...) to camelCase so existing review rows submit correctly via the SM-2 POST endpoint
-- Added keyboard shortcuts on `/review`: Space toggles Show Answer; 1–4 rate Again/Hard/Good/Easy when the answer is shown
-
-## [2026-11-02] Review History API
-- Fixed `GET /api/reviews?action=history&wordId=X` returning "Invalid action": reordered route checks so the history branch is reachable before the generic wordId branch
-- Review history data is now accessible per word via the API
-
-## [2026-11-02] Review History Page
-- Added `/review-history` page showing full SM-2 review history: word, translation, rating, ease factor change, interval, repetitions, and reviewed at
-- `GET /api/reviews?action=history` returns all history joined with word/translation via new `getAllReviewHistory()`
-- NavBar: added "History" nav item; Vocleap logo now links to `/`
-
-## [2026-11-02] Dual SQLite Backend (local / Turso)
-- Refactored `lib/db/` to support both local SQLite (`better-sqlite3`) and remote Turso (`@libsql/client`, libsql://)
-- Select backend via `DB_MODE` env var: `local` (default) or `turso`
-- Turso URL defaults to `libsql://your-database-your-org.turso.io`, overridable via `TURSO_URL`; auth via `TURSO_AUTH_TOKEN`
-- All DB operations are now async through a unified `DatabaseAdapter` interface
-
-## [2026-11-02] Build Type-Check Fixes
-- Fixed TypeScript errors that failed `next build` on Vercel
-- `lib/db/operations.ts`: introduced typed row interfaces and map snake_case columns to the camelCase `Word` model in word queries
-- `lib/db/init.ts`: typed Turso statement args as `InValue[]` and coerced `lastInsertRowid` from `bigint` to `number`
-- `app/api/words/route.ts`: removed invalid `lastReviewed: null` values and guarded against a null created word
-- `components/ui/Card.tsx`: added the `destructive` variant already used by the words import result card
-- `next-pwa.d.ts`: added ambient module types for `next-pwa`; removed the `as any` cast in `next.config.ts`
-
-## [2026-11-02] Vercel Build: Types and Viewport Metadata
-- Added `@types/better-sqlite3` as a devDependency so `next build` type-check no longer fails with `TS7016: Could not find a declaration file for module 'better-sqlite3'`
-- Refreshed `package-lock.json` (it was missing the `@libsql/*` tree) and `bun.lock` so installs are reproducible
-- `tsconfig.json`: limited implicit ambient types to `["node"]`, preventing the deprecated `@types/minimatch` stub from failing `tsc` with `TS2688`
-- `app/layout.tsx`: moved `themeColor` from `metadata` to the `viewport` export and dropped the duplicate manual `<meta name="theme-color">`; eliminates the per-route `Unsupported metadata themeColor` build warnings
-
-## [2026-11-03] Review Real-Time Feedback
-- "Due Now" stat on `/review` now decrements immediately after rating a card in review mode, instead of waiting for a refetch
-- Rating buttons now show the loading spinner only on the clicked Again/Hard/Good/Easy button; all four stay disabled during submission to prevent double submits
-
-## [2026-11-03] Mobile Navigation and Responsive Padding
-- `components/NavBar.tsx`: responsive header — inline nav links on `md+`, hamburger toggle with animated 2×2 link panel below `md`
-- Mobile menu closes on route change, Escape, or link tap; links use 44px touch targets and `aria-current` for the active page
-- Header is now sticky; nav horizontal padding matches page content (`px-4 sm:px-6`) so edges align on desktop
-- Added consistent content padding across `/`, `/dictionary`, `/review`, `/review-history`, and `/words`: `px-4 sm:px-6` with `py-6 sm:py-8` (home uses `py-8 sm:py-12`), so content no longer touches screen edges on mobile
-
-## [2026-11-03] Review Card Dictionary Shortcut
-- Added an info icon at the top-right of the reviewed word; tapping it opens `/dictionary?word=<word>` and runs the lookup automatically
-- `app/dictionary/page.tsx`: reads the `word` search param inside a `<Suspense>` boundary so the route keeps a static shell and no longer triggers Next 16's `blocking-prerender-runtime`
-- `components/DictionaryLookup.tsx`: accepts an `initialWord` prop, auto-looks it up once, and reuses a shared `lookupWord()` for form submissions
-- `components/ReviewSession.tsx`: icon is a 44px `Link` and does not trigger the mobile tap-to-toggle answer
-
-## [2026-11-03] Review Session Resume Position
-- `/review` now remembers the current card across refreshes, with independent progress for Review and New Words modes
-- Progress is stored in `localStorage` as `{ wordId, position }`; after refetch, the card is restored by `wordId` and the cumulative counter stays accurate (e.g. "Review 11 of 50" instead of resetting to 1)
-- Saved progress is cleared when the session completes or the queue is empty; stale `wordId`, invalid JSON, and unavailable storage fall back safely
-
+| Type | Emoji | Description |
+|------|-------|-------------|
+| Added | ✨ | New features |
+| Changed | 🔄 | Changes in existing functionality |
+| Deprecated | ⚠️ | Soon-to-be removed features |
+| Removed | 🗑️ | Removed features |
+| Fixed | 🐛 | Bug fixes |
+| Security | 🔒 | Vulnerability fixes |
