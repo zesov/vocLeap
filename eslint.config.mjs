@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Custom distDirs and generated artifacts:
+    ".next-*/**",
+    "frontend-dist/**",
+    "public/sw.js",
+    "public/workbox-*.js",
   ]),
 ]);
 

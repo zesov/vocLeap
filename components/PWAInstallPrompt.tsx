@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/Button";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -8,12 +8,19 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+const subscribeNoop = () => () => {};
+
+function detectIOS(): boolean {
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 export function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isIOS, setIsIOS] = useState(false);
   const [showIOSHint, setShowIOSHint] = useState(false);
   const [showDesktopHint, setShowDesktopHint] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  // False on the server/hydration pass, true once hydrated on the client.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   const handleInstall = useCallback(async () => {
     if (!deferredPrompt) return;
@@ -35,12 +42,6 @@ export function PWAInstallPrompt() {
   }, []);
 
   useEffect(() => {
-    setMounted(true);
-    // Detect iOS (no beforeinstallprompt support)
-    const ua = navigator.userAgent;
-    const isIOSDevice = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    setIsIOS(isIOSDevice);
-
     // Listen for beforeinstallprompt (Android/Chrome/Edge)
     const handler = (e: Event) => {
       e.preventDefault();
@@ -58,6 +59,8 @@ export function PWAInstallPrompt() {
 
   // Don't show if already installed
   if (!mounted || isInstalled) return null;
+
+  const isIOS = detectIOS();
 
   // iOS: show hint once (unless dismissed)
   if (isIOS) {
@@ -81,7 +84,7 @@ export function PWAInstallPrompt() {
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Tap the share icon <svg className="inline w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                and choose "Add to Home Screen"
+                and choose {'"'}Add to Home Screen{'"'}
               </p>
             </div>
             <button
@@ -158,7 +161,7 @@ export function PWAInstallPrompt() {
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Click the install icon in the address bar <svg className="inline w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                  or menu "Install Vocleap..."
+                  or menu {'"'}Install Vocleap...{'"'}
                 </p>
               </div>
               <button

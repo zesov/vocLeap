@@ -87,6 +87,10 @@ export default function ReviewHistoryPage() {
   );
 
   useEffect(() => {
+    // Initial fetch on mount. fetchHistory sets loading state synchronously on
+    // its `append` path, which the react-hooks lint rule flags; the initial
+    // request intentionally starts before first paint.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchHistory(0, false);
   }, [fetchHistory]);
 

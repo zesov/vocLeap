@@ -297,7 +297,7 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
                       {def.examples.length > 0 && (
                         <div className="space-y-1 pl-2 text-sm text-gray-600 dark:text-gray-300">
                           {def.examples.map((ex, exIndex) => (
-                            <p key={exIndex} className="italic">"{ex}"</p>
+                            <p key={exIndex} className="italic">{'"'}{ex}{'"'}</p>
                           ))}
                         </div>
                       )}

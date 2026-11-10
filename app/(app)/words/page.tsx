@@ -17,6 +17,16 @@ const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
   { value: "alpha_desc", label: "Z–A" },
 ];
 
+interface WordItem {
+  id: number;
+  word: string;
+  translation: string;
+  definitions?: string[];
+  phonetic?: string;
+  created_at?: string;
+  createdAt?: string;
+}
+
 function isSortOption(value: unknown): value is SortOption {
   return (
     typeof value === "string" &&
@@ -25,7 +35,7 @@ function isSortOption(value: unknown): value is SortOption {
 }
 
 export default function WordsPage() {
-  const [words, setWords] = useState<any[]>([]);
+  const [words, setWords] = useState<WordItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [offset, setOffset] = useState(0);
@@ -120,8 +130,8 @@ export default function WordsPage() {
       const parsed = JSON.parse(trimmed);
       if (Array.isArray(parsed)) {
         return parsed
-          .filter((e: any) => e && e.word && e.translation)
-          .map((e: any) => ({ word: String(e.word).trim(), translation: String(e.translation).trim() }));
+          .filter((e: { word?: unknown; translation?: unknown }) => !!e && !!e.word && !!e.translation)
+          .map((e: { word: unknown; translation: unknown }) => ({ word: String(e.word).trim(), translation: String(e.translation).trim() }));
       }
     } catch {
     }
@@ -138,8 +148,8 @@ export default function WordsPage() {
 
         const parts = line.split(",");
         if (parts.length === 2) {
-          let word = parts[0].trim().replace(/^"(.*)"$/, "$1");
-          let translation = parts[1].trim().replace(/^"(.*)"$/, "$1");
+          const word = parts[0].trim().replace(/^"(.*)"$/, "$1");
+          const translation = parts[1].trim().replace(/^"(.*)"$/, "$1");
           const lowerWord = word.toLowerCase();
           const lowerTranslation = translation.toLowerCase();
           const headerWords = ["word", "translation", "term", "english", "chinese", "中文", "英文", "source", "target"];
@@ -150,8 +160,8 @@ export default function WordsPage() {
             return { word, translation };
           }
         } else if (parts.length === 4) {
-          let word = parts[2].trim().replace(/^"(.*)"$/, "$1");
-          let translation = parts[3].trim().replace(/^"(.*)"$/, "$1");
+          const word = parts[2].trim().replace(/^"(.*)"$/, "$1");
+          const translation = parts[3].trim().replace(/^"(.*)"$/, "$1");
           const lowerWord = word.toLowerCase();
           const lowerTranslation = translation.toLowerCase();
           const headerWords = ["word", "translation", "term", "english", "chinese", "中文", "英文", "source", "target"];
@@ -321,7 +331,7 @@ export default function WordsPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {words.map((word: any) => (
+            {words.map((word) => (
               <Card key={word.id} variant="outlined" className="hover:border-blue-300 transition-colors">
                 <CardContent className="pt-6">
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white">{word.word}</h3>
@@ -334,7 +344,7 @@ export default function WordsPage() {
                   {word.definitions && word.definitions.length > 0 && (
                     <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{word.definitions.slice(0, 2).join(", ")}</p>
                   )}
-                  <p className="text-xs text-gray-400 mt-3">Saved: {new Date(word.created_at || word.createdAt).toLocaleDateString()}</p>
+                  <p className="text-xs text-gray-400 mt-3">Saved: {new Date((word.created_at || word.createdAt) as string).toLocaleDateString()}</p>
                 </CardContent>
               </Card>
             ))}
