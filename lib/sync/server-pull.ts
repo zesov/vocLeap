@@ -1,5 +1,5 @@
 import type { DatabaseAdapter } from "../db/adapter";
-import { ZERO_CURSOR, type SyncCursor } from "./cursor";
+import type { SyncCursor } from "./cursor";
 import {
   PULL_PAGE_SIZE,
   type HistoryPayload,

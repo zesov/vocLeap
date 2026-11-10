@@ -17,6 +17,9 @@ const eslintConfig = defineConfig([
     "frontend-dist/**",
     "public/sw.js",
     "public/workbox-*.js",
+    // Vendored WASM engines (scripts/copy-wasm.ts output):
+    "public/sqlite-wasm/**",
+    "public/wa-sqlite/**",
   ]),
 ]);
 
