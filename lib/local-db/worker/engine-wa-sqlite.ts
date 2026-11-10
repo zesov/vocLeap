@@ -46,12 +46,12 @@ export async function openWaSqliteEngine(
     ),
   ]);
 
-  const module = await (
+  const wasmModule = await (
     factoryModule as { default: () => Promise<unknown> }
   ).default();
 
   const api = apiModule as unknown as WaSqliteApi;
-  const sqlite3 = api.Factory(module);
+  const sqlite3 = api.Factory(wasmModule);
 
   const vfs = new (
     vfsModule as unknown as IdbVfsModule
