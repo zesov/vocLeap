@@ -1,6 +1,6 @@
 {
   "name": "vocleap",
-  "version": "0.1.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Open-source vocabulary learning PWA — dictionary lookup, spaced repetition (SM-2/FSRS), cross-device sync",
   "license": "MIT",
@@ -18,7 +18,8 @@
     "migrate:multiuser": "node --env-file-if-exists=.env scripts/migrate-multiuser.ts",
     "claim-owner": "node --env-file-if-exists=.env scripts/claim-owner.ts",
     "backfill:phonetic": "node --env-file-if-exists=.env scripts/backfill-phonetic.ts",
-    "reset:unreviewed": "node --env-file-if-exists=.env scripts/reset-unreviewed-reviews.ts"
+    "reset:unreviewed": "node --env-file-if-exists=.env scripts/reset-unreviewed-reviews.ts",
+    "release": "bun --env-file-if-exists=.env scripts/release.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
@@ -35,7 +36,7 @@
     "@playwright/test": "^1.64.1",
     "@tailwindcss/turbopack": "^4",
     "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

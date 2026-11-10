@@ -6,7 +6,7 @@ use [Turso](https://turso.tech) (hosted libSQL) on Vercel.
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.2+ (Node 20+ also works)
+- [Bun](https://bun.sh) 1.2+ (Node 26 LTS also works)
 - A SQLite file (local mode) or a Turso database (cloud mode)
 
 ## Environment variables
