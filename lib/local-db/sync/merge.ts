@@ -158,8 +158,21 @@ export async function mergePullPage(
     stats.reviews += 1;
   }
 
+  const incomingHistoryUuids = page.history.map((row) => row.uuid);
+  const localHistoryRows =
+    incomingHistoryUuids.length > 0
+      ? await db.all<{ uuid: string }>(
+          `SELECT uuid FROM review_history
+           WHERE uuid IN (${placeholders(incomingHistoryUuids.length)})`,
+          incomingHistoryUuids
+        )
+      : [];
+  const knownHistoryUuids = new Set(localHistoryRows.map((row) => row.uuid));
+
   for (const payload of page.history) {
     if (!knownWordUuids.has(payload.wordUuid)) continue;
+    if (knownHistoryUuids.has(payload.uuid)) continue;
+    knownHistoryUuids.add(payload.uuid);
     steps.push({
       sql: `INSERT INTO review_history (
               uuid, word_uuid, rating, previous_ease_factor,
