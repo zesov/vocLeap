@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { useData } from "@/lib/data/use-data";
+import { closeLocalDb } from "@/lib/local-db/client";
 
 interface NavItem {
   href: string;
@@ -28,6 +30,7 @@ type SrsAlgorithm = "sm2" | "fsrs";
 export default function NavBar({ initialUser = null }: NavBarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const data = useData();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
   const [user, setUser] = useState<CurrentUser | null>(initialUser);
@@ -52,11 +55,11 @@ export default function NavBar({ initialUser = null }: NavBarProps) {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    fetch("/api/settings")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { srsAlgorithm?: SrsAlgorithm } | null) => {
-        if (cancelled || !data?.srsAlgorithm) return;
-        setAlgorithm(data.srsAlgorithm);
+    data
+      .getSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setAlgorithm(settings.srsAlgorithm);
       })
       .catch(() => {
         // Toggle stays hidden when the setting cannot be loaded.
@@ -64,18 +67,13 @@ export default function NavBar({ initialUser = null }: NavBarProps) {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, data]);
 
   const handleAlgorithmChange = async (next: SrsAlgorithm) => {
     if (next === algorithm) return;
     setAlgorithm(next);
     try {
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ srsAlgorithm: next }),
-      });
-      if (!res.ok) throw new Error(String(res.status));
+      await data.setSettings({ srsAlgorithm: next });
       router.refresh();
     } catch {
       setAlgorithm(algorithm);
@@ -83,6 +81,7 @@ export default function NavBar({ initialUser = null }: NavBarProps) {
   };
 
   const handleSignOut = async () => {
+    await closeLocalDb();
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
     setAlgorithm(null);
