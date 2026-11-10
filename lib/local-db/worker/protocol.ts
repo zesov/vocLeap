@@ -68,3 +68,10 @@ export function isWorkerRequest(value: unknown): value is WorkerRequest {
       return false;
   }
 }
+
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+/** A request without its id (the client assigns one). */
+export type WorkerCallMessage = DistributiveOmit<WorkerRequest, "id">;

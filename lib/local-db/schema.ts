@@ -127,3 +127,14 @@ export async function setMeta(
     [key, value]
   );
 }
+
+export async function setMetaIfAbsent(
+  db: SqlExecutor,
+  key: string,
+  value: string
+): Promise<void> {
+  await db.run(
+    "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+    [key, value]
+  );
+}
