@@ -58,3 +58,7 @@ data/
 
 # Brainstorming visual companion sessions
 .superpowers/
+
+# Vendored WASM engines (copied by scripts/copy-wasm.ts)
+public/sqlite-wasm/
+public/wa-sqlite/

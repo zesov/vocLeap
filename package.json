@@ -14,6 +14,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "copy-wasm": "bun scripts/copy-wasm.ts",
+    "predev": "bun run copy-wasm",
+    "prebuild": "bun run copy-wasm",
     "migrate": "node --env-file-if-exists=.env scripts/migrate.ts",
     "migrate:multiuser": "node --env-file-if-exists=.env scripts/migrate-multiuser.ts",
     "claim-owner": "node --env-file-if-exists=.env scripts/claim-owner.ts",
@@ -24,6 +27,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
+    "@sqlite.org/sqlite-wasm": "^3.54.1-build1",
     "@vercel/analytics": "^2.0.1",
     "anylang": "^4.0.0",
     "better-sqlite3": "^13.0.3",
@@ -31,7 +35,8 @@
     "next-pwa": "^5.6.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "ts-fsrs": "^6.0.0"
+    "ts-fsrs": "^6.0.0",
+    "wa-sqlite": "^1.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

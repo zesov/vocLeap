@@ -29,6 +29,23 @@ const withPWAConfig = withPWA({
   disable: process.env.NODE_ENV === "development",
   runtimeCaching: [
     {
+      // App data must never be served from a cache: the local database is
+      // the only offline source of truth for API responses.
+      urlPattern: /\/api\//,
+      handler: "NetworkOnly",
+    },
+    {
+      urlPattern: /\/(sqlite-wasm|wa-sqlite)\//,
+      handler: "CacheFirst",
+      options: {
+        cacheName: "sqlite-wasm",
+        expiration: {
+          maxEntries: 8,
+          maxAgeSeconds: 365 * 24 * 60 * 60,
+        },
+      },
+    },
+    {
       urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
       handler: "CacheFirst",
       options: {
