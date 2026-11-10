@@ -79,7 +79,7 @@ Most vocabulary apps either lock your data behind a subscription, require an acc
 
 ## Quick Start
 
-**Prerequisites:** [Bun](https://bun.sh) ≥ 1.2 (Node ≥ 20 also works)
+**Prerequisites:** [Bun](https://bun.sh) ≥ 1.2 (Node 26 LTS also works)
 
 ```bash
 # Clone and enter the repo
