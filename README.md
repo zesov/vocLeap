@@ -1,111 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vocleap
 
-## Getting Started
+An open-source vocabulary learning PWA: look words up in a built-in dictionary,
+save them to your private list, and memorize them with spaced repetition — on
+any device.
 
-First, run the development server:
+🚀 **[Try the live demo](https://vocleap.vercel.app)**
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+<p align="center">
+  <img src="docs/screenshots/review.png" width="49%" alt="Review session with spaced repetition scheduling">
+&nbsp;
+  <img src="docs/screenshots/dictionary.png" width="49%" alt="Dictionary lookup with Wiktionary definitions and phonetics">
+</p>
+<p align="center">
+  <img src="docs/screenshots/words.png" width="80%" alt="Word list with phonetics, translations, and definitions">
+</p>
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Features
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Dictionary lookup** — definitions, examples, and phonetics from Wiktionary
+  with translation fallback; public, no account needed
+- **Spaced repetition** — SM-2 by default, switchable to FSRS per user; rating
+  buttons preview the scheduled interval before you commit
+- **Cross-device sessions** — review positions sync across your devices and the
+  queue resumes where you left off
+- **Multi-user accounts** — email + password sign-up; every word list is private
+- **Review history** — per-word history with before/after memory-state snapshots
+- **Word list** — batch import from `.txt` / `.json` / `.csv`, sortable cards
+  with phonetics
+- **Installable PWA** — service-worker cached, installs to your home screen
+- **Timezone-aware scheduling** — words come due at local midnight, wherever
+  you are
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Tech stack
 
-## Learn More
+Next.js 16 (App Router, Turbopack) · React 19 · Tailwind CSS 4 · TypeScript ·
+SQLite (better-sqlite3) or Turso (libSQL) · ts-fsrs · next-pwa · Playwright
 
-To learn more about Next.js, take a look at the following resources:
+## Quick start
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Accounts and multi-user data
-
-Vocleap uses email + password accounts. Each user has a private vocabulary;
-words, reviews, and review history are isolated by `words.user_id`.
-
-- Sign up at `/signup`, sign in at `/login`.
-- `GET/POST/PUT/DELETE /api/words` and `/api/reviews` require a session.
-- `/review`, `/words`, and `/review-history` redirect to `/login` when signed out.
-- `/dictionary` is public; saving a word requires an account.
-
-### Environment
-
-Copy `.env.example` to `.env.local` and set:
-
-- `DB_MODE` (`local` or `turso`)
-- `OWNER_EMAIL` — the email that should own all pre-multi-user words
-
-### Schema migrations
-
-Schema changes are an **explicit** operation, not something the app does on
-every request/cold start:
-
-- **Local development**: the schema is converged automatically once per
-  server start (in-process SQLite, effectively free). No manual step needed.
-- **Turso / production**: never auto-migrated — a serverless cold start pays
-  zero DB round trips for schema checks. Run the migration explicitly after
-  pulling schema changes and before deploying a release that needs them:
-
-  ```bash
-  DB_MODE=turso TURSO_URL=... TURSO_AUTH_TOKEN=... bun run migrate
-  ```
-
-The script is idempotent: one inspect query, and only the missing DDL as a
-single atomic batch (`Schema already up to date. Nothing to do.` when current).
-Run it against a branch database first when possible.
-
-### Upgrading an existing database
-
-The `words` table must be rebuilt to allow the same word for different users.
-Run once per database, before deploying the new code:
+Prerequisites: [Bun](https://bun.sh) 1.2+ (Node 20+ also works).
 
 ```bash
-# local
-DB_PATH=./data/vocleap.db bun run migrate:multiuser
-
-# turso
-DB_MODE=turso TURSO_URL=... TURSO_AUTH_TOKEN=... bun run migrate:multiuser
+git clone https://github.com/zesov/vocLeap.git
+cd vocLeap
+bun install
+cp .env.example .env   # DB_MODE=local works out of the box
+bun run dev
 ```
 
-The script is idempotent. Back up the database first. For Turso, test on a
-branch before production.
+Open http://localhost:3000, sign up, and start saving words. Local SQLite needs
+no configuration.
 
-### First signup claims existing words
+For production — Turso, migrations, Vercel region colocation, upgrading an
+existing database — see **[docs/self-hosting.md](docs/self-hosting.md)**.
 
-If `OWNER_EMAIL` is set and the account being created is the **first** account,
-all words with `user_id IS NULL` are assigned to it. Sign up with that email
-immediately after deploying.
+## Scripts
 
-If someone else registers first, the automatic claim is disabled. Recover with:
+| Command                        | What it does                                                    |
+| ------------------------------ | --------------------------------------------------------------- |
+| `bun run dev`                  | Dev server (Turbopack)                                          |
+| `bun run build` / `start`      | Production build / serve                                        |
+| `bun run lint`                 | ESLint                                                          |
+| `bunx tsc --noEmit`            | Typecheck                                                       |
+| `bunx playwright test`         | E2E tests (isolated dev server + SQLite on `:3101`)             |
+| `bun run migrate`              | Apply schema migrations (explicit, idempotent)                  |
+| `bun run migrate:multiuser`    | One-shot `words` table rebuild for multi-user support           |
+| `bun run claim-owner`          | Assign pre-multi-user words to an account                       |
+| `bun run backfill:phonetic`    | Backfill phonetics for saved words                              |
+| `bun run reset:unreviewed`     | Delete placeholder review rows left by older versions           |
 
-```bash
-bun run claim-owner --email=you@example.com
+## Project layout
+
+```
+app/                 # App Router: (public) home/dictionary/login/signup, (app) review/words/history
+app/api/             # REST routes: words, reviews, review-state, settings, auth, translate
+components/          # NavBar, ReviewSession, DictionaryLookup, PWA install prompt, UI primitives
+lib/db/              # Dual-backend SQLite adapter: better-sqlite3 (local) | @libsql/client (Turso)
+lib/auth/            # scrypt passwords, hashed session tokens, rate limiting, origin checks
+lib/srs/             # Scheduling: sm2.ts and fsrs.ts (ts-fsrs), switchable per user
+lib/dictionary/      # Wiktionary API client
+docs/                # Self-hosting guide, architecture notes
+tests/e2e/           # Playwright end-to-end specs
 ```
 
-### Reset a forgotten password (manual)
+## Documentation
 
-There is no password reset flow yet. Generate a new hash and update the row:
+- [Self-hosting](docs/self-hosting.md) — environment variables, Turso, migrations, Vercel deployment
+- [Architecture](docs/architecture.md) — how the DB adapter, auth, SRS, and sync layers fit together
+- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 
-```bash
-bun -e 'const { hashPassword } = await import("./lib/auth/password.ts"); console.log(await hashPassword("new-password"))'
-sqlite3 data/vocleap.db "UPDATE users SET password_hash = '<paste hash>' WHERE email = '<your email>';"
-```
+## License
 
-For Turso, run the equivalent `UPDATE` in the Turso shell.
+[MIT](LICENSE)

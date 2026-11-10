@@ -53,5 +53,8 @@ data/
 .omo/
 .next*/
 
+# local build artifacts
+/frontend-dist/
+
 # Brainstorming visual companion sessions
 .superpowers/
