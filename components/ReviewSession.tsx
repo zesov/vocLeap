@@ -282,6 +282,13 @@ export function ReviewSession() {
   // Sync state
   const [deviceId] = useState(() => getOrCreateDeviceId());
   const [synced, setSynced] = useState(false);
+  // Whether the last queue load restored saved progress. If the state fetch
+  // lands AFTER the 3s fallback already let the queue load (slow server under
+  // load), the merge arrives too late for that first load — syncEpoch bumps
+  // once to re-fetch so the late state can still restore the session.
+  const restoredRef = useRef(false);
+  const syncedRef = useRef(false);
+  const [syncEpoch, setSyncEpoch] = useState(0);
   const syncPositionsRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
   const localStorageDebounceRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
 
@@ -291,8 +298,10 @@ export function ReviewSession() {
   // overflow; the backlog must not shrink as the user progresses through it.
   const [sessionTotal, setSessionTotal] = useState(0);
 
-  // Cumulative words done in this session (restored + this queue). Used for
-  // the completion message; the card header uses sessionTotal instead.
+  // Two counters, two scopes: the top bar shows the position inside the
+  // currently fetched page (≤50 words), the card header shows the position in
+  // the whole session backlog. Cumulative done (restored + this queue) backs
+  // the completion message.
   const totalReviews = reviewedBeforeBatch + reviews.length;
   const sessionBacklog = sessionTotal > 0 ? sessionTotal : totalReviews;
 
@@ -444,7 +453,10 @@ export function ReviewSession() {
     // The timeout only flips `synced`; the queue itself then loads from
     // localStorage via the effect below.
     const timeout = setTimeout(() => {
-      if (!cancelled) setSynced(true);
+      if (!cancelled) {
+        syncedRef.current = true;
+        setSynced(true);
+      }
     }, 3000);
 
     async function load() {
@@ -472,11 +484,21 @@ export function ReviewSession() {
           const merged = mergeServerState("new", newData, localNew);
           writePositionState("new", merged);
         }
+
+        // The 3s fallback may already have let the queue load from an empty
+        // localStorage (slow state fetch under load). Re-fetch once so the
+        // late-arriving state can still restore the session.
+        if (syncedRef.current && !restoredRef.current) {
+          setSyncEpoch((epoch) => epoch + 1);
+        }
       } catch (e) {
         console.error("Sync load failed:", e);
       } finally {
         clearTimeout(timeout);
-        if (!cancelled) setSynced(true); // Proceed with localStorage only
+        if (!cancelled) {
+          syncedRef.current = true;
+          setSynced(true); // Proceed with localStorage only
+        }
       }
     }
 
@@ -579,6 +601,7 @@ export function ReviewSession() {
       }
 
       setSessionTotal(doneSoFar + remainingLive);
+      restoredRef.current = restored;
 
       setShowAnswer(false);
       setSessionComplete(reviewsData.length === 0);
@@ -614,7 +637,7 @@ export function ReviewSession() {
     return () => {
       cancelled = true;
     };
-  }, [mode, synced, fetchReviews]);
+  }, [mode, synced, syncEpoch, fetchReviews]);
 
   // Save position to legacy localStorage (for backward compat)
   useEffect(() => {
@@ -844,7 +867,7 @@ export function ReviewSession() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 mb-2">
-        <span>Card {currentPosition} of {sessionBacklog}</span>
+        <span>Card {currentIndex + 1} of {reviews.length}</span>
         <span>{Math.round(progress)}%</span>
         <span className="text-blue-600 dark:text-blue-400 font-medium">{mode === "review" ? "Review" : "New Words"}</span>
       </div>
