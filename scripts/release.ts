@@ -133,8 +133,8 @@ async function main() {
     }
 
     // Check if tag already exists
-    const { stdout: tags } = await $`git tag -l "${tag}"`.quiet();
-    if (tags.trim()) {
+    const tagsResult = await $`git tag -l "${tag}"`.quiet();
+    if (tagsResult.stdout.toString().trim()) {
       console.error(`❌ Tag ${tag} already exists.`);
       process.exit(1);
     }
