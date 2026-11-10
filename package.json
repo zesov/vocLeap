@@ -1,6 +1,6 @@
 {
   "name": "vocleap",
-  "version": "0.1.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Open-source vocabulary learning PWA — dictionary lookup, spaced repetition (SM-2/FSRS), cross-device sync",
   "license": "MIT",
