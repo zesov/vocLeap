@@ -11,6 +11,8 @@ export interface SubmitReviewInput {
   wordUuid: string;
   rating: Rating;
   timezone?: string;
+  /** Injectable clock so tests are deterministic. */
+  now?: Date;
 }
 
 export interface SubmitReviewResult {
@@ -68,7 +70,7 @@ export async function submitReviewLocal(
 
   const algorithm = await getAlgorithm(db);
   const previous = await getReviewState(db, input.wordUuid);
-  const now = new Date();
+  const now = input.now ?? new Date();
   const scheduled = scheduleReview({
     algorithm,
     review: previous,

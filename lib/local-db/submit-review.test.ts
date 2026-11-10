@@ -53,7 +53,12 @@ describe("submitReviewLocal", () => {
   });
 
   test("a reviewed word leaves the new queue and enters the due queue", async () => {
-    await submitReviewLocal(db, { wordUuid: "u1", rating: "again", timezone: "UTC" });
+    await submitReviewLocal(db, {
+      wordUuid: "u1",
+      rating: "again",
+      timezone: "UTC",
+      now: new Date("2026-11-09T10:00:00.000Z"),
+    });
     const stats = await getStats(db, new Date("2026-11-10T00:00:00.000Z"));
     expect(stats.newWords).toBe(0);
     expect(stats.due).toBe(1);
