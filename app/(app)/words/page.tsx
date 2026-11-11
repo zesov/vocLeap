@@ -49,6 +49,11 @@ export default function WordsPage() {
   const [importResult, setImportResult] = useState<{ imported: number; failed: number; total: number; message: string } | null>(null);
   const observerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // True while we have cards on screen: a re-fetch (e.g. the remote→local
+  // transition) must swap data silently instead of flashing the empty state.
+  const hasDataRef = useRef(false);
+  // Guards against out-of-order responses (older request finishing last).
+  const requestSeqRef = useRef(0);
 
   const fetchWords = useCallback(
     async (
@@ -56,8 +61,14 @@ export default function WordsPage() {
       append: boolean = false,
       nextSort: SortOption = "date_desc"
     ) => {
+      const seq = ++requestSeqRef.current;
       if (append) {
         setLoadingMore(true);
+      } else {
+        // Only show the spinner when there is nothing on screen yet.
+        if (!hasDataRef.current) {
+          setLoading(true);
+        }
       }
 
       try {
@@ -66,26 +77,34 @@ export default function WordsPage() {
           offset: nextOffset,
           sort: nextSort,
         });
-        setWords((prev) => (append ? [...prev, ...page.words] : page.words));
+        if (seq !== requestSeqRef.current) return; // a newer request won
+        setWords((prev) => {
+          const next = append ? [...prev, ...page.words] : page.words;
+          hasDataRef.current = next.length > 0;
+          return next;
+        });
         setHasMore(page.hasMore);
         setOffset(page.offset + page.words.length);
         setSort(isSortOption(page.sort) ? page.sort : nextSort);
         setError(null);
       } catch (err) {
+        if (seq !== requestSeqRef.current) return;
         console.error("Fetch words error:", err);
         setError(err instanceof Error ? err.message : "Failed to load words");
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (seq === requestSeqRef.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
     [data]
   );
 
+  // Fetches the first page. Re-runs when `data` changes identity (the
+  // remote→local transition) — the swap is silent because hasDataRef is set,
+  // so the already-visible cards never blank out.
   useEffect(() => {
-    // The first page is fetched after the effect runs; state updates happen
-    // once the response resolves, not synchronously during the effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchWords(0, false, "date_desc");
   }, [fetchWords]);
 
@@ -98,6 +117,7 @@ export default function WordsPage() {
   const handleSortChange = (nextSort: SortOption) => {
     setSort(nextSort);
     setWords([]);
+    hasDataRef.current = false;
     setOffset(0);
     setHasMore(true);
     setError(null);
@@ -342,7 +362,7 @@ export default function WordsPage() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[calc(100vh-300px)]">
             {words.map((word) => (
               <Card key={word.id} variant="outlined" className="hover:border-blue-300 transition-colors">
                 <CardContent className="pt-6">
@@ -368,9 +388,17 @@ export default function WordsPage() {
                 <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
                 <span className="text-sm text-gray-600 dark:text-gray-400">Loading more words...</span>
               </div>
+              <Button
+                variant="outline"
+                className="ml-4"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+              >
+                Load More
+              </Button>
             </div>
           )}
-          <div ref={observerRef} className="h-1" />
+          <div ref={observerRef} className="h-10" />
         </>
       )}
     </div>

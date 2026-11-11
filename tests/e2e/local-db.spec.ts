@@ -75,4 +75,51 @@ test.describe("local database boot", () => {
 
     expect(failures).toEqual([]);
   });
+
+  test("words page keeps content visible across the remote-to-local transition", async ({
+    page,
+  }) => {
+    const email = uniqueEmail("localwords");
+    await signUp(page, email);
+    await addWords(page, [
+      { word: "alpha", translation: "阿爾法" },
+      { word: "beta", translation: "貝塔" },
+      { word: "gamma", translation: "伽馬" },
+    ]);
+
+    // Watch the word card headings: once they appear, they must never
+    // disappear and come back (that would be the transition flicker).
+    let visibleOnce = false;
+    let disappeared = false;
+    const headings = page.locator("h3");
+    const poll = setInterval(async () => {
+      try {
+        const count = await headings.count();
+        if (count > 0) {
+          visibleOnce = true;
+        } else if (visibleOnce) {
+          disappeared = true;
+        }
+      } catch {
+        // page navigating
+      }
+    }, 100);
+
+    try {
+      await page.goto("/words");
+      // Remote (or local after bootstrap) data must appear.
+      await expect(headings.first()).toBeVisible({ timeout: 15000 });
+
+      // Wait through the local DB becoming ready and re-rendering.
+      await page.waitForTimeout(6000);
+
+      // The cards are still there — never blanked out.
+      expect(await headings.count()).toBeGreaterThan(0);
+      expect(disappeared).toBe(false);
+    } finally {
+      clearInterval(poll);
+    }
+
+    expect(visibleOnce).toBe(true);
+  });
 });

@@ -10,19 +10,19 @@
     "url": "git+https://github.com/zesov/vocLeap.git"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "NODE_USE_ENV_PROXY=1 next dev",
+    "build": "NODE_USE_ENV_PROXY=1 next build",
+    "start": "NODE_USE_ENV_PROXY=1 next start",
     "lint": "eslint",
     "copy-wasm": "bun scripts/copy-wasm.ts",
     "predev": "bun run copy-wasm",
     "prebuild": "bun run copy-wasm",
-    "migrate": "node --env-file-if-exists=.env scripts/migrate.ts",
-    "migrate:multiuser": "node --env-file-if-exists=.env scripts/migrate-multiuser.ts",
-    "claim-owner": "node --env-file-if-exists=.env scripts/claim-owner.ts",
-    "backfill:phonetic": "node --env-file-if-exists=.env scripts/backfill-phonetic.ts",
-    "backfill:uuid": "node --env-file-if-exists=.env scripts/backfill-uuid.ts",
-    "reset:unreviewed": "node --env-file-if-exists=.env scripts/reset-unreviewed-reviews.ts",
+    "migrate": "NODE_USE_ENV_PROXY=1 node --env-file-if-exists=.env scripts/migrate.ts",
+    "migrate:multiuser": "NODE_USE_ENV_PROXY=1 node --env-file-if-exists=.env scripts/migrate-multiuser.ts",
+    "claim-owner": "NODE_USE_ENV_PROXY=1 node --env-file-if-exists=.env scripts/claim-owner.ts",
+    "backfill:phonetic": "NODE_USE_ENV_PROXY=1 node --env-file-if-exists=.env scripts/backfill-phonetic.ts",
+    "backfill:uuid": "NODE_USE_ENV_PROXY=1 node --env-file-if-exists=.env scripts/backfill-uuid.ts",
+    "reset:unreviewed": "NODE_USE_ENV_PROXY=1 node --env-file-if-exists=.env scripts/reset-unreviewed-reviews.ts",
     "release": "bun --env-file-if-exists=.env scripts/release.ts"
   },
   "dependencies": {
