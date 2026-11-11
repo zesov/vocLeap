@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-11
+
 ### Added
 - **UUID backfill migration** — `ensureSchema` now assigns v4 UUIDs to legacy `words` / `review_history` rows that predate the uuid columns (idempotent `UPDATE … WHERE uuid IS NULL`, one atomic batch); `bun run migrate` converges local SQLite and Turso. Fixes sync pull returning nothing for pre-sync data
 - **Words page stability** — Infinite scroll got a visible "Load More" fallback button and a properly sized scroll sentinel; the remote→local database transition now swaps data silently (request-sequence guard prevents out-of-order responses from blanking the grid)
