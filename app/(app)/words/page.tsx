@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { SortSelect } from "@/components/ui/SortSelect";
 import { formatPhonetic } from "@/lib/format/phonetic";
+import { useData } from "@/lib/data/use-data";
+import { requestSync } from "@/lib/local-db/sync/trigger";
 
 const ITEMS_PER_PAGE = 30;
 
@@ -35,6 +37,7 @@ function isSortOption(value: unknown): value is SortOption {
 }
 
 export default function WordsPage() {
+  const data = useData();
   const [words, setWords] = useState<WordItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -46,6 +49,11 @@ export default function WordsPage() {
   const [importResult, setImportResult] = useState<{ imported: number; failed: number; total: number; message: string } | null>(null);
   const observerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // True while we have cards on screen: a re-fetch (e.g. the remote→local
+  // transition) must swap data silently instead of flashing the empty state.
+  const hasDataRef = useRef(false);
+  // Guards against out-of-order responses (older request finishing last).
+  const requestSeqRef = useRef(0);
 
   const fetchWords = useCallback(
     async (
@@ -53,39 +61,50 @@ export default function WordsPage() {
       append: boolean = false,
       nextSort: SortOption = "date_desc"
     ) => {
+      const seq = ++requestSeqRef.current;
       if (append) {
         setLoadingMore(true);
+      } else {
+        // Only show the spinner when there is nothing on screen yet.
+        if (!hasDataRef.current) {
+          setLoading(true);
+        }
       }
 
       try {
-        const res = await fetch(
-          `/api/words?limit=${ITEMS_PER_PAGE}&offset=${nextOffset}&sort=${nextSort}`
-        );
-        if (!res.ok) {
-          throw new Error(`Request failed (${res.status})`);
-        }
-
-        const data = await res.json();
-        setWords((prev) => (append ? [...prev, ...data.words] : data.words));
-        setHasMore(data.hasMore);
-        setOffset(data.offset + data.words.length);
-        setSort(isSortOption(data.sort) ? data.sort : nextSort);
+        const page = await data.getWords({
+          limit: ITEMS_PER_PAGE,
+          offset: nextOffset,
+          sort: nextSort,
+        });
+        if (seq !== requestSeqRef.current) return; // a newer request won
+        setWords((prev) => {
+          const next = append ? [...prev, ...page.words] : page.words;
+          hasDataRef.current = next.length > 0;
+          return next;
+        });
+        setHasMore(page.hasMore);
+        setOffset(page.offset + page.words.length);
+        setSort(isSortOption(page.sort) ? page.sort : nextSort);
         setError(null);
       } catch (err) {
+        if (seq !== requestSeqRef.current) return;
         console.error("Fetch words error:", err);
         setError(err instanceof Error ? err.message : "Failed to load words");
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (seq === requestSeqRef.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
-    []
+    [data]
   );
 
+  // Fetches the first page. Re-runs when `data` changes identity (the
+  // remote→local transition) — the swap is silent because hasDataRef is set,
+  // so the already-visible cards never blank out.
   useEffect(() => {
-    // The first page is fetched after the effect runs; state updates happen
-    // once the response resolves, not synchronously during the effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchWords(0, false, "date_desc");
   }, [fetchWords]);
 
@@ -98,6 +117,7 @@ export default function WordsPage() {
   const handleSortChange = (nextSort: SortOption) => {
     setSort(nextSort);
     setWords([]);
+    hasDataRef.current = false;
     setOffset(0);
     setHasMore(true);
     setError(null);
@@ -228,6 +248,17 @@ export default function WordsPage() {
         return;
       }
 
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        setImportResult({
+          imported: 0,
+          failed: 0,
+          total: 0,
+          message: "Importing words is only available while online",
+        });
+        setImporting(false);
+        return;
+      }
+
       const res = await fetch("/api/words", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -239,6 +270,7 @@ export default function WordsPage() {
       if (result.imported > 0) {
         setOffset(0);
         await fetchWords(0, false, sort);
+        requestSync();
       }
 
       setImportResult({
@@ -330,7 +362,7 @@ export default function WordsPage() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[calc(100vh-300px)]">
             {words.map((word) => (
               <Card key={word.id} variant="outlined" className="hover:border-blue-300 transition-colors">
                 <CardContent className="pt-6">
@@ -356,9 +388,17 @@ export default function WordsPage() {
                 <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
                 <span className="text-sm text-gray-600 dark:text-gray-400">Loading more words...</span>
               </div>
+              <Button
+                variant="outline"
+                className="ml-4"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+              >
+                Load More
+              </Button>
             </div>
           )}
-          <div ref={observerRef} className="h-1" />
+          <div ref={observerRef} className="h-10" />
         </>
       )}
     </div>

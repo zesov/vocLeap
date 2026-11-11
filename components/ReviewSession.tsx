@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { parseRating, sm2Algorithm } from "@/lib/srs/sm2";
 import { isSessionStateStale } from "@/lib/review-session-state";
 import { formatPhonetic } from "@/lib/format/phonetic";
+import { ApiError } from "@/lib/data";
+import { useData } from "@/lib/data/use-data";
 
 type Rating = "again" | "hard" | "good" | "easy";
 type Mode = "review" | "new";
@@ -111,6 +113,8 @@ interface FsrsCardState {
 
 interface Review {
   wordId: number;
+  /** Present on both the local and remote payloads; used for sync ops. */
+  uuid?: string;
   word: {
     word: string;
     translation: string;
@@ -263,6 +267,7 @@ function mergeServerState(
 
 export function ReviewSession() {
   const router = useRouter();
+  const data = useData();
   const [mode, setMode] = useState<Mode>("review");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -311,14 +316,12 @@ export function ReviewSession() {
     const wordId = reviews[currentIndex]?.wordId;
     if (!wordId) return;
     let cancelled = false;
-    fetch(`/api/reviews?action=intervals&wordId=${wordId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { intervals?: Record<string, number>; algorithm?: "sm2" | "fsrs" } | null) => {
-        if (cancelled || !data?.intervals) return;
-        if (data.algorithm === "sm2" || data.algorithm === "fsrs") {
-          setAlgorithm(data.algorithm);
-        }
-        setIntervalsByWord((prev) => new Map(prev).set(wordId, data.intervals as Record<Rating, number>));
+    data
+      .getIntervals(wordId)
+      .then((preview: { intervals: Record<string, number>; algorithm: "sm2" | "fsrs" }) => {
+        if (cancelled) return;
+        setAlgorithm(preview.algorithm);
+        setIntervalsByWord((prev) => new Map(prev).set(wordId, preview.intervals as Record<Rating, number>));
       })
       .catch(() => {
         // Keep the local SM-2 fallback preview on fetch failure.
@@ -326,19 +329,17 @@ export function ReviewSession() {
     return () => {
       cancelled = true;
     };
-  }, [reviews, currentIndex]);
+  }, [reviews, currentIndex, data]);
 
   // Load the algorithm setting up front so the FSRS stats line renders
   // correctly on the first card instead of flashing SM-2 values.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/settings")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { srsAlgorithm?: "sm2" | "fsrs" } | null) => {
+    data
+      .getSettings()
+      .then((settings) => {
         if (cancelled) return;
-        if (data?.srsAlgorithm === "sm2" || data?.srsAlgorithm === "fsrs") {
-          setAlgorithm(data.srsAlgorithm);
-        }
+        setAlgorithm(settings.srsAlgorithm);
       })
       .catch(() => {
         // Keep the "sm2" default on failure.
@@ -346,7 +347,7 @@ export function ReviewSession() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [data]);
 
   // Initialize queue order from saved positions (localStorage or server-synced).
   // The queue itself comes from the API (`review` = due, `new` = never
@@ -518,27 +519,10 @@ export function ReviewSession() {
       // The queue always comes from the mode endpoint so it only contains
       // words that are actually due (`review`) or never reviewed (`new`).
       // Saved positions are applied afterwards, purely to restore ordering.
-      const reviewsParams = new URLSearchParams({ action: mode, limit: "50" });
-
-      const [reviewsRes, statsRes] = await Promise.all([
-        fetch(`/api/reviews?${reviewsParams}`),
-        fetch("/api/reviews?action=stats"),
+      const [reviewsData, statsData] = await Promise.all([
+        mode === "review" ? data.getDueReviews(50) : data.getNewWords(50),
+        data.getStats(),
       ]);
-
-      if (!reviewsRes.ok || !statsRes.ok) {
-        console.error("Failed to fetch reviews:", reviewsRes.status, statsRes.status);
-        setLoading(false);
-        return;
-      }
-
-      const reviewsData = await reviewsRes.json();
-      const statsData = await statsRes.json();
-
-      if (!Array.isArray(reviewsData)) {
-        console.error("Invalid reviews data:", reviewsData);
-        setLoading(false);
-        return;
-      }
 
       // Auto-switch to new words mode if no due reviews but there are new words
       if (mode === "review" && statsData.due === 0 && statsData.newWords > 0) {
@@ -618,7 +602,7 @@ export function ReviewSession() {
     } finally {
       setLoading(false);
     }
-  }, [mode, initializeQueueFromPositions, clearServerState]);
+  }, [mode, initializeQueueFromPositions, clearServerState, data]);
 
   // Load the queue once the initial sync has settled, then only again when the
   // mode actually changes. The previous polling loop could call fetchReviews
@@ -699,23 +683,11 @@ export function ReviewSession() {
     setPendingRating(rating);
 
     try {
-      const response = await fetch("/api/reviews", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wordId: currentReview.wordId,
-          rating,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }),
+      await data.submitReview({
+        wordId: currentReview.wordId,
+        uuid: currentReview.uuid,
+        rating,
       });
-
-      if (response.status === 401) {
-        alert("Please log in to submit reviews.");
-        return;
-      }
-      if (!response.ok) {
-        throw new Error("Failed to submit review");
-      }
 
       // Update stats
       setStats((prev: Stats) => {
@@ -739,12 +711,16 @@ export function ReviewSession() {
         void clearServerState(mode);
       }
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        alert("Please log in to submit reviews.");
+        return;
+      }
       console.error("Review submission error:", error);
       alert("Failed to submit review. Please try again.");
     } finally {
       setPendingRating(null);
     }
-  }, [reviews, currentIndex, pendingRating, mode, clearServerState]);
+  }, [reviews, currentIndex, pendingRating, mode, clearServerState, data]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

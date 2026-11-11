@@ -3,7 +3,7 @@ import withPWA from "next-pwa";
 
 const nextConfig: NextConfig = {
   experimental: {
-    agentFeedback: true,
+    agentFeedback: false,
   },
   // `next dev` takes an exclusive lock at `<distDir>/lock`, so two dev servers
   // cannot share a build directory. Pointing the Playwright webServer at its own
@@ -28,6 +28,23 @@ const withPWAConfig = withPWA({
   skipWaiting: true,
   disable: process.env.NODE_ENV === "development",
   runtimeCaching: [
+    {
+      // App data must never be served from a cache: the local database is
+      // the only offline source of truth for API responses.
+      urlPattern: /\/api\//,
+      handler: "NetworkOnly",
+    },
+    {
+      urlPattern: /\/(sqlite-wasm|wa-sqlite)\//,
+      handler: "CacheFirst",
+      options: {
+        cacheName: "sqlite-wasm",
+        expiration: {
+          maxEntries: 8,
+          maxAgeSeconds: 365 * 24 * 60 * 60,
+        },
+      },
+    },
     {
       urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
       handler: "CacheFirst",

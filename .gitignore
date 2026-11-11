@@ -46,8 +46,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# data
-data/
+# data (root-level SQLite database directory)
+/data/
 
 # agents
 .omo/
@@ -58,3 +58,7 @@ data/
 
 # Brainstorming visual companion sessions
 .superpowers/
+
+# Vendored WASM engines (copied by scripts/copy-wasm.ts)
+public/sqlite-wasm/
+public/wa-sqlite/

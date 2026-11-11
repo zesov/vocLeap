@@ -33,7 +33,12 @@ const SCHEMA_INSPECT_SQL = `
     (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_reviews_next_review') AS idx_reviews_next_review,
     (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_review_history_word') AS idx_review_history_word,
     (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_review_history_reviewed') AS idx_review_history_reviewed,
-    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_words_user') AS idx_words_user
+    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_words_user') AS idx_words_user,
+    (SELECT COUNT(*) FROM pragma_table_info('words') WHERE name = 'uuid') AS words_uuid,
+    (SELECT COUNT(*) FROM pragma_table_info('words') WHERE name = 'deleted_at') AS words_deleted_at,
+    (SELECT COUNT(*) FROM pragma_table_info('review_history') WHERE name = 'uuid') AS review_history_uuid,
+    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_words_uuid') AS idx_words_uuid,
+    (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_review_history_uuid') AS idx_review_history_uuid
 `;
 
 const SCHEMA_FLAG_KEYS = [
@@ -57,6 +62,11 @@ const SCHEMA_FLAG_KEYS = [
   "idx_review_history_word",
   "idx_review_history_reviewed",
   "idx_words_user",
+  "words_uuid",
+  "words_deleted_at",
+  "review_history_uuid",
+  "idx_words_uuid",
+  "idx_review_history_uuid",
 ] as const;
 
 type SchemaFlags = Partial<Record<(typeof SCHEMA_FLAG_KEYS)[number], number>>;
@@ -71,8 +81,69 @@ function flag(flags: SchemaFlags, key: string): boolean {
   return Number(flags[key as keyof SchemaFlags] ?? 0) > 0;
 }
 
-function schemaIsCurrent(flags: SchemaFlags): boolean {
+function schemaIsCurrent(
+  flags: SchemaFlags & { words_missing_uuid?: number; history_missing_uuid?: number }
+): boolean {
+  // A schema whose uuid columns exist but whose rows were never backfilled is
+  // NOT current: the sync pull would skip every legacy row.
+  if (Number(flags.words_missing_uuid ?? 0) !== 0) return false;
+  if (Number(flags.history_missing_uuid ?? 0) !== 0) return false;
   return SCHEMA_FLAG_KEYS.every((key) => flag(flags, key));
+}
+
+/**
+ * Legacy rows created before the uuid columns existed never got identifiers,
+ * so the sync pull (`WHERE uuid IS NOT NULL`) skipped them and freshly
+ * bootstrapped local databases ended up empty. One idempotent UPDATE per
+ * table assigns a v4-format UUID (randomblob trick) to every row that still
+ * lacks one. Collisions against the unique index are practically impossible.
+ */
+const BACKFILL_WORDS_UUID = `
+  UPDATE words
+  SET uuid = lower(
+    hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' ||
+    substr(hex(randomblob(2)), 2) || '-' ||
+    substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2) ||
+    '-' || hex(randomblob(6))
+  )
+  WHERE uuid IS NULL`;
+
+const BACKFILL_HISTORY_UUID = `
+  UPDATE review_history
+  SET uuid = lower(
+    hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' ||
+    substr(hex(randomblob(2)), 2) || '-' ||
+    substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2) ||
+    '-' || hex(randomblob(6))
+  )
+  WHERE uuid IS NULL`;
+
+/**
+ * Backfill detection: counts rows still missing a uuid. Only runs when the
+ * columns already exist; while they are missing the DDL below both adds the
+ * columns and backfills, so the count is unnecessary.
+ */
+const BACKFILL_INSPECT_SQL = `
+  SELECT
+    (SELECT COUNT(*) FROM words WHERE uuid IS NULL) AS words_missing_uuid,
+    (SELECT COUNT(*) FROM review_history WHERE uuid IS NULL) AS history_missing_uuid`;
+
+async function inspectBackfillFlags(
+  db: DatabaseAdapter
+): Promise<{ words_missing_uuid: number; history_missing_uuid: number }> {
+  try {
+    const row = await db.prepare(BACKFILL_INSPECT_SQL).get();
+    if (!row) return { words_missing_uuid: 0, history_missing_uuid: 0 };
+    return {
+      words_missing_uuid: Number((row as { words_missing_uuid?: number }).words_missing_uuid ?? 0),
+      history_missing_uuid: Number(
+        (row as { history_missing_uuid?: number }).history_missing_uuid ?? 0
+      ),
+    };
+  } catch {
+    // Columns not present yet: the DDL adds them and backfills unconditionally.
+    return { words_missing_uuid: -1, history_missing_uuid: -1 };
+  }
 }
 
 const CREATE_TABLE_STATEMENTS = [
@@ -156,13 +227,18 @@ const INDEX_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_reviews_next_review ON reviews(next_review_date)`,
   `CREATE INDEX IF NOT EXISTS idx_review_history_word ON review_history(word_id)`,
   `CREATE INDEX IF NOT EXISTS idx_review_history_reviewed ON review_history(reviewed_at DESC, id DESC)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_words_uuid ON words(uuid)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_review_history_uuid ON review_history(uuid)`,
 ];
 
 /**
  * Builds the DDL needed to converge on the current schema, adding an ALTER
- * only for columns/objects the inspect query reported as missing.
+ * only for columns/objects the inspect query reported as missing. Also
+ * includes the uuid backfill whenever legacy rows still lack identifiers.
  */
-function buildDdlStatements(flags: SchemaFlags): string[] {
+function buildDdlStatements(
+  flags: SchemaFlags & { words_missing_uuid?: number; history_missing_uuid?: number }
+): string[] {
   const statements = [...CREATE_TABLE_STATEMENTS];
 
   if (!flag(flags, "users_srs_algorithm")) {
@@ -196,6 +272,26 @@ function buildDdlStatements(flags: SchemaFlags): string[] {
   if (!flag(flags, "review_history_snapshot")) {
     statements.push(`ALTER TABLE review_history ADD COLUMN snapshot TEXT`);
   }
+  if (!flag(flags, "words_uuid")) {
+    statements.push(`ALTER TABLE words ADD COLUMN uuid TEXT`);
+  }
+  if (!flag(flags, "words_deleted_at")) {
+    statements.push(`ALTER TABLE words ADD COLUMN deleted_at DATETIME`);
+  }
+  if (!flag(flags, "review_history_uuid")) {
+    statements.push(`ALTER TABLE review_history ADD COLUMN uuid TEXT`);
+  }
+
+  // Backfill legacy rows. -1 means "column absent during inspection": the
+  // ALTER above just created it, so every existing row needs an identifier.
+  const wordsMissing = Number(flags.words_missing_uuid ?? -1);
+  if (wordsMissing !== 0) {
+    statements.push(BACKFILL_WORDS_UUID);
+  }
+  const historyMissing = Number(flags.history_missing_uuid ?? -1);
+  if (historyMissing !== 0) {
+    statements.push(BACKFILL_HISTORY_UUID);
+  }
 
   statements.push(...INDEX_STATEMENTS);
 
@@ -228,6 +324,9 @@ const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: string }> =
   { table: "reviews", column: "fsrs_last_review", ddl: `ALTER TABLE reviews ADD COLUMN fsrs_last_review DATETIME` },
   { table: "review_history", column: "algorithm", ddl: `ALTER TABLE review_history ADD COLUMN algorithm TEXT NOT NULL DEFAULT 'sm2'` },
   { table: "review_history", column: "snapshot", ddl: `ALTER TABLE review_history ADD COLUMN snapshot TEXT` },
+  { table: "words", column: "uuid", ddl: `ALTER TABLE words ADD COLUMN uuid TEXT` },
+  { table: "words", column: "deleted_at", ddl: `ALTER TABLE words ADD COLUMN deleted_at DATETIME` },
+  { table: "review_history", column: "uuid", ddl: `ALTER TABLE review_history ADD COLUMN uuid TEXT` },
 ];
 
 async function migrateColumnsBestEffort(db: DatabaseAdapter): Promise<void> {
@@ -241,6 +340,18 @@ async function migrateColumnsBestEffort(db: DatabaseAdapter): Promise<void> {
     } catch (error) {
       console.error(`Column migration failed for ${table}.${column}:`, error);
     }
+  }
+
+  // Legacy rows need identifiers for the sync pull to ever see them.
+  try {
+    await db.exec(BACKFILL_WORDS_UUID);
+  } catch (error) {
+    console.error("words uuid backfill failed:", error);
+  }
+  try {
+    await db.exec(BACKFILL_HISTORY_UUID);
+  } catch (error) {
+    console.error("review_history uuid backfill failed:", error);
   }
 
   try {
@@ -267,9 +378,15 @@ async function migrateColumnsBestEffort(db: DatabaseAdapter): Promise<void> {
 export async function ensureSchema(
   db: DatabaseAdapter
 ): Promise<SchemaMigrationReport> {
-  let flags: SchemaFlags | null = null;
+  let flags: (SchemaFlags & {
+    words_missing_uuid?: number;
+    history_missing_uuid?: number;
+  }) | null = null;
   try {
-    flags = await inspectSchemaFlags(db);
+    flags = {
+      ...(await inspectSchemaFlags(db)),
+      ...(await inspectBackfillFlags(db)),
+    };
   } catch (error) {
     console.error("Schema inspection failed; falling back to base DDL:", error);
   }

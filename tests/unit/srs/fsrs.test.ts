@@ -10,7 +10,7 @@ import {
   scheduleWithFsrs,
   seedFsrsStateFromSm2,
   type FsrsState,
-} from "./fsrs";
+} from "../../../lib/srs/fsrs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

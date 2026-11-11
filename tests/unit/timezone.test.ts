@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { addCalendarDaysInZone, resolveClientTimezone } from "./timezone";
+import { addCalendarDaysInZone, resolveClientTimezone } from "../../lib/timezone.ts";
 
 describe("addCalendarDaysInZone", () => {
   test("Asia/Hong_Kong: next day's local midnight lands at 16:00 UTC the day before", () => {

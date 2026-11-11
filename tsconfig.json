@@ -51,9 +51,7 @@
   "exclude": [
     "node_modules",
     "scripts",
-    "lib/srs/fsrs.test.ts",
-    "lib/timezone.test.ts",
-    "lib/srs/sm2.test.ts",
-    "lib/review-session-state.test.ts"
+    "**/*.test.ts",
+    "tests/unit"
   ]
 }

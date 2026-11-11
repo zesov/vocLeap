@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Card, CardContent } from "@/components/ui/Card";
 import { formatPhonetic } from "@/lib/format/phonetic";
+import { ApiError } from "@/lib/data";
+import { useData } from "@/lib/data/use-data";
 
 interface LookupSource {
   id: "wiktionary" | "google-translate";
@@ -81,6 +83,7 @@ interface DictionaryLookupProps {
 }
 
 export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
+  const data = useData();
   const [word, setWord] = useState(initialWord);
   const [sourceLang, setSourceLang] = useState("en");
   const [targetLang, setTargetLang] = useState("zh-CN");
@@ -115,26 +118,19 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
       setSaveRequiresAuth(false);
 
       try {
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ word: query, sourceLang, targetLang }),
+        const translated = await data.translate({
+          word: query,
+          sourceLanguage: sourceLang,
+          targetLanguage: targetLang,
         });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.error || "Translation failed");
-        }
-        
-        setResult(data);
+        setResult(translated);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Translation failed");
       } finally {
         setLoading(false);
       }
     },
-    [sourceLang, targetLang]
+    [sourceLang, targetLang, data]
   );
 
   const handleTranslate = (e: React.FormEvent) => {
@@ -162,35 +158,24 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
     setSaveRequiresAuth(false);
     
     try {
-      const response = await fetch("/api/words", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          word: result.word,
-          translation: result.translation,
-          definitions: result.definitions.map(d => d.definition),
-          examples: result.definitions.flatMap(d => d.examples),
-          phonetic: result.phonetic,
-          audioUrl: result.audioUrl,
-          sourceLanguage: result.sourceLanguage,
-          targetLanguage: result.targetLanguage,
-        }),
+      await data.saveWord({
+        word: result.word,
+        translation: result.translation,
+        definitions: result.definitions.map(d => d.definition),
+        examples: result.definitions.flatMap(d => d.examples),
+        phonetic: result.phonetic,
+        audioUrl: result.audioUrl,
+        sourceLanguage: result.sourceLanguage,
+        targetLanguage: result.targetLanguage,
       });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          setSaveRequiresAuth(true);
-          setSaveMessage("");
-        } else {
-          throw new Error(data.error || "Save failed");
-        }
-      } else {
-        setSaveMessage(response.status === 201 ? "Word saved successfully!" : "Word updated successfully!");
-      }
+      setSaveMessage("Word saved successfully!");
     } catch (err) {
-      setSaveMessage(err instanceof Error ? err.message : "Save failed");
+      if (err instanceof ApiError && err.status === 401) {
+        setSaveRequiresAuth(true);
+        setSaveMessage("");
+      } else {
+        setSaveMessage(err instanceof Error ? err.message : "Save failed");
+      }
     } finally {
       setSaving(false);
     }
