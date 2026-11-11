@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **UUID backfill migration** — `ensureSchema` now assigns v4 UUIDs to legacy `words` / `review_history` rows that predate the uuid columns (idempotent `UPDATE … WHERE uuid IS NULL`, one atomic batch); `bun run migrate` converges local SQLite and Turso. Fixes sync pull returning nothing for pre-sync data
+- **Words page stability** — Infinite scroll got a visible "Load More" fallback button and a properly sized scroll sentinel; the remote→local database transition now swaps data silently (request-sequence guard prevents out-of-order responses from blanking the grid)
+- **Unit test relocation** — All `*.test.ts` files consolidated under `tests/unit/` mirroring `lib/` structure; `tsconfig` excludes them from the app build
+
+### Changed
+- **Proxy-aware dev tooling** — `dev` / `build` / `start` / `migrate` / backfill scripts run with `NODE_USE_ENV_PROXY=1` so Node's fetch honours `HTTP_PROXY`/`HTTPS_PROXY` in proxied environments (no-op where no proxy vars are set, e.g. Vercel)
+
+### Fixed
+- **PWA install prompt** — Eliminated render-time `setTimeout(setState)`; hint state is only scheduled from effects, silencing the "state update on a component that hasn't mounted yet" console error
+- **Local database resilience** — OPFS availability probed via `installOpfsSAHPoolVfs` (release builds strip `sqlite3.opfs`); wa-sqlite IndexedDB engine skipped with a clear message when the Web Locks API is unavailable (private browsing); fatal storage errors (disk I/O, corruption, quota) tear down the local handle and fall back to the server API instead of failing every read
+- **Sync bootstrap ordering** — The first pull runs before the local database is published to components, so the words/review pages never render an empty offline file; `saveWord` triggers an immediate sync
+- **Sync server IDs** — `serverId` flows through pull/merge and backfills existing rows, fixing `FOREIGN KEY constraint failed` and duplicate-key warnings on queued ops
+
 ## [0.7.1] - 2026-11-10
 
 ### Added
