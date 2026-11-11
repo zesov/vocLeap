@@ -32,7 +32,6 @@
     "anylang": "^4.0.0",
     "better-sqlite3": "^13.0.3",
     "next": "16.4.3",
-    "next-pwa": "^5.6.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "ts-fsrs": "^6.0.0",
@@ -40,13 +39,16 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
+    "@serwist/turbopack": "^9.5.13",
     "@tailwindcss/turbopack": "^4",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "serwist": "^9.5.13",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

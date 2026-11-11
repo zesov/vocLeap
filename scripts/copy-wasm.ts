@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
 
 /**
@@ -73,4 +73,51 @@ for (const { from, to } of COPIES) {
 if (missing) {
   console.error("Run `bun install` first.");
   process.exit(1);
+}
+
+// A short SyncAccessHandle.read() (observed on iOS Safari) must not be
+// misread as a bad digest: upstream answers that with
+// setAssociatedPath("") + truncate, which empties a database that still
+// holds data. Every legit pool file is >= SECTOR_SIZE (4096) bytes and the
+// header block is only 516+8 bytes, so a short read of a file that is big
+// enough is always the iOS bug — fail the init (the worker falls back to
+// the IndexedDB engine) instead of destroying the file.
+const PATCHES = [
+  {
+    file: "public/sqlite-wasm/sqlite3.mjs",
+    from: "sah.read(this.#apBody, { at: 0 });",
+    to: [
+      "if (sah.read(this.#apBody, { at: 0 }) !== this.#apBody.byteLength) {",
+      '\t\t\t\t\tif (sah.getSize() < this.#apBody.byteLength) return "";',
+      '\t\t\t\t\ttoss("SAHPool: short header read of a non-empty file (iOS Safari short-read bug; vocleap patch)");',
+      "\t\t\t\t}",
+    ].join("\n"),
+  },
+  {
+    file: "public/sqlite-wasm/sqlite3.mjs",
+    from: "sah.read(fileDigest, { at: HEADER_OFFSET_DIGEST });",
+    to: [
+      "if (sah.read(fileDigest, { at: HEADER_OFFSET_DIGEST }) !== fileDigest.byteLength) {",
+      '\t\t\t\t\tif (sah.getSize() < HEADER_OFFSET_DIGEST + HEADER_DIGEST_SIZE) return "";',
+      '\t\t\t\t\ttoss("SAHPool: short digest read of a non-empty file (iOS Safari short-read bug; vocleap patch)");',
+      "\t\t\t\t}",
+    ].join("\n"),
+  },
+];
+
+for (const { file, from, to } of PATCHES) {
+  if (!existsSync(file)) {
+    console.error(`Patching ${file}: file missing (copy step failed?)`);
+    process.exit(1);
+  }
+  const contents = readFileSync(file, "utf8");
+  const occurrences = contents.split(from).length - 1;
+  if (occurrences !== 1) {
+    console.error(
+      `Patching ${file}: expected exactly 1 occurrence of the target, found ${occurrences}. Upstream layout changed — update the patch before shipping.`
+    );
+    process.exit(1);
+  }
+  writeFileSync(file, contents.replace(from, to));
+  console.log(`patched ${file}: SAHPool short-read guard`);
 }

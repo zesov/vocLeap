@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { getLocalDb, initLocalDb } from "@/lib/local-db/client";
 import { runSyncOnce, startSyncScheduler } from "@/lib/local-db/sync/engine";
+import { flushPendingOpsOnPageExit } from "@/lib/local-db/sync/trigger";
 
 interface LocalDbInitProps {
   userId: number;
@@ -23,6 +24,10 @@ export default function LocalDbInit({
     let cancelled = false;
     let stopSync: (() => void) | null = null;
 
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") flushPendingOpsOnPageExit();
+    };
+
     void initLocalDb({
       userId,
       email,
@@ -34,11 +39,18 @@ export default function LocalDbInit({
     }).then((state) => {
       if (cancelled || state.status !== "ready") return;
       stopSync = startSyncScheduler({ db: () => getLocalDb() });
+      // The debounced push dies with the page; flush pending ops (ratings
+      // written seconds before a reload/close) with a keepalive request so
+      // the next visit does not resurrect already-reviewed words.
+      window.addEventListener("pagehide", flushPendingOpsOnPageExit);
+      document.addEventListener("visibilitychange", onHidden);
     });
 
     return () => {
       cancelled = true;
       stopSync?.();
+      window.removeEventListener("pagehide", flushPendingOpsOnPageExit);
+      document.removeEventListener("visibilitychange", onHidden);
     };
   }, [userId, email, srsAlgorithm]);
 

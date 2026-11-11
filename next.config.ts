@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import withPWA from "next-pwa";
+import { withSerwist } from "@serwist/turbopack";
 
 const nextConfig: NextConfig = {
   experimental: {
@@ -22,63 +22,6 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["upc-0006"],
 };
 
-const withPWAConfig = withPWA({
-  dest: "public",
-  register: true,
-  skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
-  runtimeCaching: [
-    {
-      // App data must never be served from a cache: the local database is
-      // the only offline source of truth for API responses.
-      urlPattern: /\/api\//,
-      handler: "NetworkOnly",
-    },
-    {
-      urlPattern: /\/(sqlite-wasm|wa-sqlite)\//,
-      handler: "CacheFirst",
-      options: {
-        cacheName: "sqlite-wasm",
-        expiration: {
-          maxEntries: 8,
-          maxAgeSeconds: 365 * 24 * 60 * 60,
-        },
-      },
-    },
-    {
-      urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-      handler: "CacheFirst",
-      options: {
-        cacheName: "google-fonts",
-        expiration: {
-          maxEntries: 4,
-          maxAgeSeconds: 365 * 24 * 60 * 60,
-        },
-      },
-    },
-    {
-      urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-      handler: "CacheFirst",
-      options: {
-        cacheName: "google-fonts-static",
-        expiration: {
-          maxEntries: 4,
-          maxAgeSeconds: 365 * 24 * 60 * 60,
-        },
-      },
-    },
-    {
-      urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
-      handler: "CacheFirst",
-      options: {
-        cacheName: "images",
-        expiration: {
-          maxEntries: 64,
-          maxAgeSeconds: 30 * 24 * 60 * 60,
-        },
-      },
-    },
-  ],
-});
-
-export default withPWAConfig(nextConfig);
+// Runtime caching strategies live in `app/sw.ts`; Serwist compiles the
+// service worker via `app/serwist/[path]/route.ts` (Turbopack-compatible).
+export default withSerwist(nextConfig);

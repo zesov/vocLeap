@@ -71,7 +71,7 @@ Most vocabulary apps either lock your data behind a subscription, require an acc
 | **SRS** | SM-2 (custom) · `ts-fsrs` (FSRS) — switchable per user |
 | **Auth** | scrypt password hashing · Hashed session tokens · Origin-checked CSRF protection |
 | **Dictionary** | Wiktionary API via `anylang` |
-| **PWA** | `next-pwa` (Workbox) |
+| **PWA** | `Serwist` (Workbox fork, Turbopack-compatible) |
 | **Testing** | Playwright (E2E, isolated SQLite per test) |
 | **Analytics** | Vercel Analytics (opt-in, privacy-friendly) |
 
@@ -175,7 +175,7 @@ Vocleap stands on the shoulders of giants. Special thanks to the authors and mai
 - **[Wiktionary](https://www.wiktionary.org/)** — Free multilingual dictionary (Wikimedia Foundation)
 
 ### PWA & Tooling
-- **[next-pwa](https://github.com/shadowwalker/next-pwa)** — Zero-config PWA for Next.js (ShadowWalker)
+- **[Serwist](https://serwist.pages.dev)** — Actively maintained Workbox fork powering the service worker (DuCanhGH and contributors)
 - **[Workbox](https://developers.google.com/web/tools/workbox)** — Service worker libraries (Google Chrome team)
 - **[Playwright](https://playwright.dev/)** — Reliable end-to-end testing (Microsoft)
 - **[ESLint](https://eslint.org/)** — Pluggable JavaScript linter

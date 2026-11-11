@@ -297,6 +297,23 @@ export function ReviewSession() {
   const syncPositionsRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
   const localStorageDebounceRef = useRef<Record<Mode, NodeJS.Timeout | null>>({ review: null, new: null });
 
+  // getData() swaps its facade instance when the local DB publishes its
+  // handle (worker boot + best-effort bootstrap pull) — which can happen
+  // mid-session. fetchReviews reads the facade through this ref instead of
+  // closing over `data`, so that swap does not recreate fetchReviews and
+  // re-run the queue effect below (a mid-session re-fetch restores from a
+  // position state still inside its debounce window and resets the session).
+  const dataRef = useRef(data);
+  // Whether a queue load has already completed this mount; gates the
+  // facade-flip re-fetch (see the effect after the queue effect).
+  const sessionLoadedRef = useRef(false);
+
+  // Keep dataRef current for fetchReviews. Declared before the effects that
+  // read it so it is already synced when they run in the same commit.
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
   // Frozen session backlog: "already done in this session + live remaining
   // words" (stats are uncapped), captured whenever the session (re)loads. The
   // queue fetch is capped at 50, so restored-count + queue size would hide the
@@ -519,13 +536,15 @@ export function ReviewSession() {
       // The queue always comes from the mode endpoint so it only contains
       // words that are actually due (`review`) or never reviewed (`new`).
       // Saved positions are applied afterwards, purely to restore ordering.
+      const facade = dataRef.current;
       const [reviewsData, statsData] = await Promise.all([
-        mode === "review" ? data.getDueReviews(50) : data.getNewWords(50),
-        data.getStats(),
+        mode === "review" ? facade.getDueReviews(50) : facade.getNewWords(50),
+        facade.getStats(),
       ]);
 
       // Auto-switch to new words mode if no due reviews but there are new words
       if (mode === "review" && statsData.due === 0 && statsData.newWords > 0) {
+        sessionLoadedRef.current = true;
         setMode("new");
         return;
       }
@@ -586,6 +605,7 @@ export function ReviewSession() {
 
       setSessionTotal(doneSoFar + remainingLive);
       restoredRef.current = restored;
+      sessionLoadedRef.current = true;
 
       setShowAnswer(false);
       setSessionComplete(reviewsData.length === 0);
@@ -602,7 +622,7 @@ export function ReviewSession() {
     } finally {
       setLoading(false);
     }
-  }, [mode, initializeQueueFromPositions, clearServerState, data]);
+  }, [mode, initializeQueueFromPositions, clearServerState]);
 
   // Load the queue once the initial sync has settled, then only again when the
   // mode actually changes. The previous polling loop could call fetchReviews
@@ -622,6 +642,21 @@ export function ReviewSession() {
       cancelled = true;
     };
   }, [mode, synced, syncEpoch, fetchReviews]);
+
+  // The local DB publishes its handle some time after mount, so getData()
+  // swaps facades mid-session. Re-fetch on that swap only while no session
+  // has loaded yet: it is the rescue path for an offline cold start (the
+  // remote queue fetch failed; the local DB holds the data). Once cards are
+  // showing, the swap must not rebuild the queue — the position state it
+  // would restore from is still inside its debounce window, so the session
+  // would visibly reset and the pending server save would be clobbered.
+  const prevDataRef = useRef(data);
+  useEffect(() => {
+    if (prevDataRef.current === data) return;
+    prevDataRef.current = data;
+    if (!synced || sessionLoadedRef.current) return;
+    void fetchReviews();
+  }, [data, synced, fetchReviews]);
 
   // Save position to legacy localStorage (for backward compat)
   useEffect(() => {

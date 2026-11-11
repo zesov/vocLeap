@@ -25,6 +25,8 @@ interface SqliteWasmModule {
     name: string;
     directory: string;
     initialCapacity?: number;
+    preserveOnInitFailure?: boolean;
+    forceReinitIfPreviouslyFailed?: boolean;
   }) => Promise<OpfsPool>;
 }
 
@@ -58,6 +60,13 @@ export async function openSqliteWasmEngine(fileName: string): Promise<WasmEngine
       name: "vocleap",
       directory: "/vocleap-pool",
       initialCapacity: 6,
+      // Upstream deletes the entire pool when init fails (default
+      // preserveOnInitFailure=false). On iOS a network-change page reload can
+      // race the previous instance's un-released access handles, and wiping
+      // there destroys every local database — keep the files instead and let
+      // the next boot retry.
+      preserveOnInitFailure: true,
+      forceReinitIfPreviouslyFailed: true,
     });
   } catch (error) {
     if (isBusy(error)) throw new DbBusyError();
