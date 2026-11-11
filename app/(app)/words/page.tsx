@@ -54,6 +54,13 @@ export default function WordsPage() {
   const hasDataRef = useRef(false);
   // Guards against out-of-order responses (older request finishing last).
   const requestSeqRef = useRef(0);
+  // The fetch effect below must use the live sort without depending on it:
+  // depending on `sort` would make every sort change re-run the effect and
+  // clobber the list handleSortChange just fetched.
+  const sortRef = useRef(sort);
+  useEffect(() => {
+    sortRef.current = sort;
+  }, [sort]);
 
   const fetchWords = useCallback(
     async (
@@ -103,9 +110,13 @@ export default function WordsPage() {
 
   // Fetches the first page. Re-runs when `data` changes identity (the
   // remote→local transition) — the swap is silent because hasDataRef is set,
-  // so the already-visible cards never blank out.
+  // so the already-visible cards never blank out. Once cards are on screen
+  // the transition must not rebuild the list at all: a fresh page-1 fetch
+  // would clobber the active sort and scroll position; only a page that
+  // still has nothing to show (offline cold start, failed fetch) re-fetches.
   useEffect(() => {
-    fetchWords(0, false, "date_desc");
+    if (hasDataRef.current) return;
+    fetchWords(0, false, sortRef.current);
   }, [fetchWords]);
 
   const handleLoadMore = useCallback(() => {
