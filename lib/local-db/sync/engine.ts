@@ -87,6 +87,58 @@ export interface RunSyncOptions {
   now?: () => Date;
 }
 
+export interface PushPendingOptions {
+  fetchImpl?: typeof fetch;
+  /** Send with keepalive so the request survives a page teardown. */
+  keepalive?: boolean;
+}
+
+/**
+ * Pushes one batch of pending ops (up to 200) and acks what the server
+ * settled. Shared by the sync cycle, the post-write push and the page-exit
+ * flush; the endpoint is idempotent, so overlapping pushes are harmless.
+ */
+export async function pushPendingOps(
+  db: SqlExecutor,
+  options: PushPendingOptions = {}
+): Promise<number> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const ops = await getPendingOps(db, 200);
+  if (ops.length === 0) return 0;
+
+  const response = await fetchImpl("/api/sync/push", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    keepalive: options.keepalive,
+    body: JSON.stringify({ ops }),
+  });
+
+  if (response.status === 401) throw new AuthRequiredError();
+  if (!response.ok) {
+    throw new Error(`Push failed with ${response.status}`);
+  }
+
+  const body = (await response.json()) as SyncPushResponse;
+  const settled: string[] = [];
+  let rejection: string | null = null;
+  for (const result of body.results) {
+    if (result.accepted) settled.push(result.opId);
+    else rejection = result.reason ?? "rejected";
+  }
+  if (settled.length > 0) await ackOps(db, settled);
+
+  if (rejection) {
+    paused = true;
+    return emit({
+      phase: "paused",
+      pending: await pendingCount(db),
+      error: rejection,
+    }).pending;
+  }
+  return settled.length;
+}
+
 /**
  * One full push-then-pull cycle. Throws `AuthRequiredError` on 401 so the
  * caller can route the user to sign-in; every other failure surfaces as a
@@ -112,39 +164,8 @@ export async function runSyncOnce(
 
   try {
     for (let batch = 0; batch < MAX_PUSH_BATCHES; batch += 1) {
-      const ops = await getPendingOps(db, 200);
-      if (ops.length === 0) break;
-
-      const response = await fetchImpl("/api/sync/push", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ ops }),
-      });
-
-      if (response.status === 401) throw new AuthRequiredError();
-      if (!response.ok) {
-        throw new Error(`Push failed with ${response.status}`);
-      }
-
-      const body = (await response.json()) as SyncPushResponse;
-      const settled: string[] = [];
-      let rejection: string | null = null;
-      for (const result of body.results) {
-        if (result.accepted) settled.push(result.opId);
-        else rejection = result.reason ?? "rejected";
-      }
-      if (settled.length > 0) await ackOps(db, settled);
-
-      if (rejection) {
-        paused = true;
-        return emit({
-          phase: "paused",
-          pending: await pendingCount(db),
-          error: rejection,
-        });
-      }
-      if (body.results.length === 0) break;
+      const settled = await pushPendingOps(db, { fetchImpl });
+      if (settled === 0) break;
     }
 
     let cursor = await readCursor(db);
