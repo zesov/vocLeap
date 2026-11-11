@@ -146,12 +146,35 @@ Results carry source badges (`wiktionary` / `google-translate`) rendered in
 
 ## PWA and offline
 
-- `next.config.ts` wraps the build with `next-pwa`: the service worker is
-  generated into `public/` in production (disabled in dev), with CacheFirst
-  runtime caching for Google Fonts, static assets, and images.
-- `public/manifest.json` — standalone display, SVG icons (192/512, maskable);
-  `components/PWAInstallPrompt.tsx` handles `beforeinstallprompt` and iOS
-  hints.
+- `next.config.ts` wraps the build with `withSerwist` from `@serwist/turbopack`
+  (next-pwa is webpack-only and silently produces no service worker under
+  Next 16's default Turbopack build). `app/sw.ts` defines the caching
+  strategy and is compiled by `app/serwist/[path]/route.ts`; it serves
+  precached build assets plus NetworkFirst HTML documents in production
+  (`SerwistProvider` registration is disabled in dev).
+- `components/SWWarmup.tsx` — after the service worker activates, it
+  re-caches the current page's HTML via a `CACHE_URLS` message; without it,
+  the first page of a session (loaded before the SW took control) would
+  fall back to `/~offline` on an offline reload.
+- `lib/pwa/turbopack-worker-shim.ts` (imported by `SWWarmup`) — Turbopack
+  passes worker bootstrap config as a `#params=` URL **fragment**, which
+  the Cache API strips, so a precached/cached worker chunk served offline
+  throws `Missing worker bootstrap config`. The shim wraps
+  `window.Worker` and rewrites `#params=` to a `?params=` query (decoded
+  once, matching the runtime's own parsing) before construction. Worker
+  chunks are excluded from the precache manifest
+  (`manifestTransforms` in `app/serwist/[path]/route.ts`) and served by a
+  dedicated CacheFirst route in `app/sw.ts` so the query string stays part
+  of the cache key.
+- `SerwistProvider` in `app/layout.tsx` sets `reloadOnOnline={false}`:
+  Chromium fires a spurious `online` event (with `navigator.onLine` still
+  `false`) in the outgoing document when an offline navigation swaps
+  renderers; the provider's default reload-on-online would then reload
+  the previous page and hijack the pending navigation. Reconnection is
+  handled by the local-DB sync engine instead.
+- `public/manifest.json` — standalone display, PNG icons (192/512 + maskable
+  512) and SVG fallbacks; `components/PWAInstallPrompt.tsx` handles
+  `beforeinstallprompt` and iOS hints.
 - Client persistence uses **localStorage**, not IndexedDB:
   `review_{mode}_positions` (positions map + session meta), a device ID, and
   UI dismissal flags. Offline = cached shell + saved session state; review
