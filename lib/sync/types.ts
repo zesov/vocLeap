@@ -25,6 +25,12 @@ export interface SyncPushResponse {
 
 export interface WordPayload {
   uuid: string;
+  /**
+   * Server row id. Pulled words carry it so the local queue can keep exposing
+   * the same ids as the HTTP API (session state sync keys on `word_id`).
+   * Locally-created payloads send `null`; the server assigns its own id.
+   */
+  serverId: number | null;
   word: string;
   translation: string;
   definitions: string[];

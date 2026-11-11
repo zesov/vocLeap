@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ZERO_CURSOR } from "../../sync/cursor";
-import type { PullPage } from "../../sync/server-pull";
-import type { SqlExecutor } from "../executor";
-import { createNodeExecutor } from "../testing/executor";
-import { migrateLocalSchema } from "../schema";
-import { enqueueOp } from "./oplog";
-import { mergePullPage } from "./merge";
+import { ZERO_CURSOR } from "../../../../lib/sync/cursor";
+import type { PullPage } from "../../../../lib/sync/server-pull";
+import type { SqlExecutor } from "../../../../lib/local-db/executor.ts";
+import { createNodeExecutor } from "../../../../lib/local-db/testing/executor.ts";
+import { migrateLocalSchema } from "../../../../lib/local-db/schema.ts";
+import { enqueueOp } from "../../../../lib/local-db/sync/oplog.ts";
+import { mergePullPage } from "../../../../lib/local-db/sync/merge.ts";
 
 let db: SqlExecutor;
 
@@ -22,9 +22,15 @@ function page(partial: Partial<PullPage>): PullPage {
   };
 }
 
-function word(uuid: string, updatedAt: string, deletedAt: string | null = null) {
+function word(
+  uuid: string,
+  updatedAt: string,
+  deletedAt: string | null = null,
+  serverId: number | null = null
+) {
   return {
     uuid,
+    serverId,
     word: `w-${uuid}`,
     translation: "t",
     definitions: ["d"],
@@ -58,7 +64,7 @@ describe("mergePullPage", () => {
     const result = await mergePullPage(
       db,
       page({
-        words: [word("u1", "2026-11-02T00:00:00.000Z")],
+        words: [word("u1", "2026-11-02T00:00:00.000Z", null, 42)],
         reviews: [
           {
             wordUuid: "u1",
@@ -100,8 +106,9 @@ describe("mergePullPage", () => {
     const rows = await db.all(
       "SELECT uuid, server_id FROM words WHERE uuid = 'u1'"
     );
-    // Pulled payloads carry no numeric server id; uuid is the local key.
-    expect(rows[0].server_id).toBeNull();
+    // The numeric id from the server keeps local queue ids stable for callers
+    // that talk to the HTTP API (e.g. review-state sync).
+    expect(rows[0].server_id).toBe(42);
     const reviews = await db.all("SELECT * FROM reviews WHERE word_uuid = 'u1'");
     expect(reviews).toHaveLength(1);
     const history = await db.all("SELECT * FROM review_history");
@@ -117,6 +124,39 @@ describe("mergePullPage", () => {
     await mergePullPage(db, page({ words: [word("u1", "2026-11-03T00:00:00.000Z")] }));
     rows = await db.all("SELECT word FROM words WHERE uuid = 'u1'");
     expect(rows[0].word).toBe("w-u1");
+  });
+
+  test("an update backfills a missing server id without clearing a known one", async () => {
+    await seedWord("u1", "2026-11-02T00:00:00.000Z");
+    await db.run("UPDATE words SET server_id = NULL WHERE uuid = 'u1'");
+
+    await mergePullPage(
+      db,
+      page({ words: [word("u1", "2026-11-03T00:00:00.000Z", null, 7)] })
+    );
+    let rows = await db.all("SELECT server_id FROM words WHERE uuid = 'u1'");
+    expect(rows[0].server_id).toBe(7);
+
+    // A payload without an id must not erase the one already stored.
+    await mergePullPage(
+      db,
+      page({ words: [word("u1", "2026-11-04T00:00:00.000Z", null, null)] })
+    );
+    rows = await db.all("SELECT server_id FROM words WHERE uuid = 'u1'");
+    expect(rows[0].server_id).toBe(7);
+  });
+
+  test("an echo of a just-pushed word still adopts its server id", async () => {
+    const updatedAt = "2026-11-02T00:00:00.000Z";
+    await seedWord("u1", updatedAt);
+    await db.run("UPDATE words SET server_id = NULL WHERE uuid = 'u1'");
+
+    // The server keeps the client timestamp, so the row is not "newer".
+    await mergePullPage(db, page({ words: [word("u1", updatedAt, null, 9)] }));
+
+    const rows = await db.all("SELECT word, server_id FROM words WHERE uuid = 'u1'");
+    expect(rows[0].server_id).toBe(9);
+    expect(rows[0].word).toBe("local");
   });
 
   test("local pending word op wins over pulled row", async () => {

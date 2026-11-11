@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { SqlExecutor } from "./executor";
-import { createNodeExecutor } from "./testing/executor";
-import { getMeta, migrateLocalSchema } from "./schema";
+import type { SqlExecutor } from "../../../lib/local-db/executor";
+import { createNodeExecutor } from "../../../lib/local-db/testing/executor";
+import { getMeta, migrateLocalSchema } from "../../../lib/local-db/schema";
 import {
   deleteWordLocal,
   getDueReviews,
@@ -12,8 +12,8 @@ import {
   getWordsPage,
   setAlgorithmLocal,
   updateWordLocal,
-} from "./operations";
-import { getPendingOps } from "./sync/oplog";
+} from "../../../lib/local-db/operations";
+import { getPendingOps } from "../../../lib/local-db/sync/oplog.ts";
 
 let db: SqlExecutor;
 const NOW = new Date("2026-11-10T12:00:00.000Z");

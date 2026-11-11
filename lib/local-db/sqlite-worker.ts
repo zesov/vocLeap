@@ -28,6 +28,15 @@ function makeExecutor(target: WasmEngine): SqlExecutor {
   };
 }
 
+// Check if the environment supports Web Locks (required by wa-sqlite's IDBBatchAtomicVFS)
+function hasWebLocksSupport(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    typeof navigator.locks.request === "function"
+  );
+}
+
 async function init(
   id: number,
   request: { engine: "auto" | "opfs" | "idb"; userId: number; fileName: string }
@@ -51,6 +60,12 @@ async function init(
   let busy = false;
 
   for (const candidate of order) {
+    // Skip wa-sqlite if Web Locks API is not available (it will fail with
+    // "Cannot read properties of undefined (reading 'request')" otherwise).
+    if (candidate === "idb" && !hasWebLocksSupport()) {
+      failures.push("idb: Web Locks API unavailable (private browsing or non-secure origin)");
+      continue;
+    }
     try {
       const opened =
         candidate === "opfs"
@@ -70,9 +85,17 @@ async function init(
         busy = true;
         break;
       }
-      failures.push(
-        `${candidate}: ${error instanceof Error ? error.message : String(error)}`
-      );
+      // wa-sqlite's WebLocks failure surfaces as a cryptic TypeError.
+      // Detect it and give a clear message instead of "disk I/O error".
+      const msg = error instanceof Error ? error.message : String(error);
+      if (
+        candidate === "idb" &&
+        /Cannot read properties of undefined.*request|navigator\.locks/.test(msg)
+      ) {
+        failures.push("idb: Web Locks API unavailable (private browsing or non-secure origin)");
+        continue;
+      }
+      failures.push(`${candidate}: ${msg}`);
     }
   }
 

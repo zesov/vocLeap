@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { createNodeExecutor } from "../local-db/testing/executor";
-import { migrateLocalSchema } from "../local-db/schema";
-import { getPendingOps } from "../local-db/sync/oplog";
-import type { SqlExecutor } from "../local-db/executor";
-import { createLocalData } from "./local";
-import type { DataApi } from "./api";
+import { createNodeExecutor } from "../../../lib/local-db/testing/executor.ts";
+import { migrateLocalSchema } from "../../../lib/local-db/schema.ts";
+import { getPendingOps } from "../../../lib/local-db/sync/oplog.ts";
+import type { SqlExecutor } from "../../../lib/local-db/executor.ts";
+import { createLocalData } from "../../../lib/data/local";
+import type { DataApi } from "../../../lib/data/api";
 
 let db: SqlExecutor;
 const remoteCalls: string[] = [];
@@ -121,5 +121,19 @@ describe("local data", () => {
       targetLanguage: "zh-CN",
     });
     expect(remoteCalls).toEqual(["saveWord"]);
+  });
+
+  test("saveWord triggers a sync so the new word is pulled locally", async () => {
+    let syncRequests = 0;
+    const data = createLocalData(db, remote, () => {
+      syncRequests += 1;
+    });
+    await data.saveWord({
+      word: "plum",
+      translation: "李子",
+      sourceLanguage: "en",
+      targetLanguage: "zh-CN",
+    });
+    expect(syncRequests).toBe(1);
   });
 });

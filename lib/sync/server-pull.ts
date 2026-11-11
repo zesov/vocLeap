@@ -107,6 +107,7 @@ export async function pullPage(
 
   const words: WordPayload[] = wordRows.map((row) => ({
     uuid: str(row.uuid),
+    serverId: Number(row.id),
     word: str(row.word),
     translation: str(row.translation),
     definitions: parseJsonArray(row.definitions),

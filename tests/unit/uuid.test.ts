@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { uuidv7 } from "./uuid";
+import { uuidv7 } from "../../lib/uuid";
 
 describe("uuidv7", () => {
   test("produces a well-formed v7 UUID", () => {

@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { decodeCursor, encodeCursor, ZERO_CURSOR } from "../../sync/cursor";
-import type { PullPage } from "../../sync/server-pull";
-import type { SqlExecutor } from "../executor";
-import { createNodeExecutor } from "../testing/executor";
-import { getMeta, migrateLocalSchema } from "../schema";
-import { enqueueOp, getPendingOps } from "./oplog";
+import { decodeCursor, encodeCursor, ZERO_CURSOR } from "../../../../lib/sync/cursor";
+import type { PullPage } from "../../../../lib/sync/server-pull";
+import type { SqlExecutor } from "../../../../lib/local-db/executor.ts";
+import { createNodeExecutor } from "../../../../lib/local-db/testing/executor.ts";
+import { getMeta, migrateLocalSchema } from "../../../../lib/local-db/schema.ts";
+import { enqueueOp, getPendingOps } from "../../../../lib/local-db/sync/oplog.ts";
 import {
   AuthRequiredError,
   getSyncStatus,
   isSyncPaused,
   resetSyncPause,
   runSyncOnce,
-} from "./engine";
+} from "../../../../lib/local-db/sync/engine.ts";
 
 let db: SqlExecutor;
 

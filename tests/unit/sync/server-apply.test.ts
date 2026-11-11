@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ensureSchema } from "../db/schema";
-import { createTestAdapter, type TestAdapter } from "../db/testing";
-import { applyOps } from "./server-apply";
+import { ensureSchema } from "../../../lib/db/schema.ts";
+import { createTestAdapter, type TestAdapter } from "../../../lib/db/testing.ts";
+import { applyOps } from "../../../lib/sync/server-apply.ts";
 import type { SyncOp } from "./types";
 
 let db: TestAdapter;

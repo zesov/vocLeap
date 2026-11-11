@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createRemoteData } from "./remote";
+import { createRemoteData } from "../../../lib/data/remote";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

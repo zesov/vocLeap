@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ZERO_CURSOR, decodeCursor, encodeCursor } from "./cursor";
+import { ZERO_CURSOR, decodeCursor, encodeCursor } from "../../../lib/sync/cursor";
 
 describe("sync cursor", () => {
   test("round-trips through the URL-safe encoding", () => {

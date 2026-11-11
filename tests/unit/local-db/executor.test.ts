@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createNodeExecutor } from "./testing/executor";
+import { createNodeExecutor } from "../../../lib/local-db/testing/executor";
 
 describe("node SqlExecutor", () => {
   test("runs DDL, writes, and reads", async () => {

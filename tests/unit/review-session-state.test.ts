@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isSameLocalDay, isSessionStateStale } from "./review-session-state";
+import { isSameLocalDay, isSessionStateStale } from "../../lib/review-session-state.ts";
 
 describe("isSameLocalDay", () => {
   test("same instant is the same day", () => {

@@ -48,8 +48,13 @@ export async function mergePullPage(
   const incomingWordUuids = page.words.map((row) => row.uuid);
   const localWordRows =
     incomingWordUuids.length > 0
-      ? await db.all<{ uuid: string; updated_at: string; deleted_at: string | null }>(
-          `SELECT uuid, updated_at, deleted_at FROM words
+      ? await db.all<{
+          uuid: string;
+          server_id: number | null;
+          updated_at: string;
+          deleted_at: string | null;
+        }>(
+          `SELECT uuid, server_id, updated_at, deleted_at FROM words
            WHERE uuid IN (${placeholders(incomingWordUuids.length)})`,
           incomingWordUuids
         )
@@ -75,7 +80,7 @@ export async function mergePullPage(
               ON CONFLICT(uuid) DO NOTHING`,
         params: [
           payload.uuid,
-          null,
+          payload.serverId ?? null,
           ...wordColumns(payload).slice(0, 8),
           payload.createdAt,
           payload.updatedAt,
@@ -87,15 +92,27 @@ export async function mergePullPage(
     }
 
     if (local.deleted_at !== null) continue;
-    if (!isNewer(payload.updatedAt, local.updated_at)) continue;
+    if (!isNewer(payload.updatedAt, local.updated_at)) {
+      // A locally-created word echoes back with the timestamp we pushed, so the
+      // row is not newer but still needs the server id the insert assigned.
+      if (payload.serverId != null && local.server_id == null) {
+        steps.push({
+          sql: "UPDATE words SET server_id = ? WHERE uuid = ? AND server_id IS NULL",
+          params: [payload.serverId, payload.uuid],
+        });
+        stats.words += 1;
+      }
+      continue;
+    }
 
     steps.push({
       sql: `UPDATE words SET
+              server_id = COALESCE(?, server_id),
               word = ?, translation = ?, definitions = ?, examples = ?,
               phonetic = ?, audio_url = ?, source_language = ?,
               target_language = ?, updated_at = ?, deleted_at = ?
             WHERE uuid = ?`,
-      params: [...wordColumns(payload), payload.uuid],
+      params: [payload.serverId ?? null, ...wordColumns(payload), payload.uuid],
     });
     stats.words += 1;
   }

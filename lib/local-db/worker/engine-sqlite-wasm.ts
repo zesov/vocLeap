@@ -21,12 +21,11 @@ interface OpfsPool {
 }
 
 interface SqliteWasmModule {
-  opfs?: unknown;
-  installOpfsSAHPoolVfs(options: {
+  installOpfsSAHPoolVfs?: (options: {
     name: string;
     directory: string;
     initialCapacity?: number;
-  }): Promise<OpfsPool>;
+  }) => Promise<OpfsPool>;
 }
 
 function isBusy(error: unknown): boolean {
@@ -45,13 +44,17 @@ export async function openSqliteWasmEngine(fileName: string): Promise<WasmEngine
     locateFile: (name: string) => `/sqlite-wasm/${name}`,
   });
 
-  if (!sqlite3.opfs) {
-    throw new Error("OPFS is not available in this browser");
+  // Release builds strip `sqlite3.opfs`, so the installer is the supported
+  // feature probe. It rejects by itself when the browser (or thread) lacks the
+  // OPFS APIs, which lets the worker fall back to the IndexedDB engine.
+  const installOpfs = sqlite3.installOpfsSAHPoolVfs;
+  if (typeof installOpfs !== "function") {
+    throw new Error("This sqlite3-wasm build has no OPFS support");
   }
 
   let pool: OpfsPool;
   try {
-    pool = await sqlite3.installOpfsSAHPoolVfs({
+    pool = await installOpfs({
       name: "vocleap",
       directory: "/vocleap-pool",
       initialCapacity: 6,

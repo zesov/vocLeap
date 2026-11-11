@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { getLocalDb, initLocalDb } from "@/lib/local-db/client";
-import { startSyncScheduler } from "@/lib/local-db/sync/engine";
+import { runSyncOnce, startSyncScheduler } from "@/lib/local-db/sync/engine";
 
 interface LocalDbInitProps {
   userId: number;
@@ -23,7 +23,15 @@ export default function LocalDbInit({
     let cancelled = false;
     let stopSync: (() => void) | null = null;
 
-    void initLocalDb({ userId, email, srsAlgorithm }).then((state) => {
+    void initLocalDb({
+      userId,
+      email,
+      srsAlgorithm,
+      // First run on this device: pull the server state before components read
+      // the file. runSyncOnce reports failures as sync status, so this only
+      // delays readiness by one round trip.
+      bootstrap: (db) => runSyncOnce(db),
+    }).then((state) => {
       if (cancelled || state.status !== "ready") return;
       stopSync = startSyncScheduler({ db: () => getLocalDb() });
     });

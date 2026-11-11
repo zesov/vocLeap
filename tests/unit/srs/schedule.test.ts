@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { scheduleReview } from "./schedule";
+import { scheduleReview } from "../../../lib/srs/schedule";
 
 const NOW = new Date("2026-11-10T10:00:00.000Z");
 

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   initialLocalDbState,
+  isFatalStorageError,
   isOfflineCapable,
   reduceLocalDbState,
-} from "./client";
+} from "../../../lib/local-db/client";
 
 describe("local db state reducer", () => {
   test("starts idle and online", () => {
@@ -64,4 +65,39 @@ describe("local db state reducer", () => {
     });
     expect(isOfflineCapable(state)).toBe(true);
   });
+});
+
+describe("fatal storage errors", () => {
+  // These mean the local file can no longer be trusted: keep using it and
+  // every read fails, so the client must fall back to the server API.
+  const fatal = [
+    "disk I/O error",
+    "database disk image is malformed",
+    "database or disk is full",
+    "SQLITE_IOERR_WRITE",
+    "SQLITE_FULL",
+    "QuotaExceededError: The quota has been exceeded.",
+  ];
+  for (const message of fatal) {
+    test(`abandons the local db on: ${message}`, () => {
+      expect(isFatalStorageError(message)).toBe(true);
+    });
+  }
+
+  // Ordinary SQL/logic errors do not justify throwing the database away.
+  const recoverable = [
+    "no such table: words",
+    "Database is not initialized",
+    "SQL logic error",
+    "UNIQUE constraint failed: words.word",
+    // Environment issues that surface as storage errors but aren't fatal:
+    "idb: Web Locks API unavailable (private browsing or non-secure origin)",
+    "Cannot read properties of undefined (reading 'request')",
+    "navigator.locks is undefined",
+  ];
+  for (const message of recoverable) {
+    test(`keeps the local db on: ${message}`, () => {
+      expect(isFatalStorageError(message)).toBe(false);
+    });
+  }
 });

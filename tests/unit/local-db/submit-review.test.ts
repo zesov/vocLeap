@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { SqlExecutor } from "./executor";
-import { createNodeExecutor } from "./testing/executor";
-import { migrateLocalSchema, setMeta } from "./schema";
-import { getStats } from "./operations";
-import { getPendingOps } from "./sync/oplog";
-import { submitReviewLocal } from "./submit-review";
+import type { SqlExecutor } from "../../../lib/local-db/executor";
+import { createNodeExecutor } from "../../../lib/local-db/testing/executor";
+import { migrateLocalSchema, setMeta } from "../../../lib/local-db/schema";
+import { getStats } from "../../../lib/local-db/operations";
+import { getPendingOps } from "../../../lib/local-db/sync/oplog";
+import { submitReviewLocal } from "../../../lib/local-db/submit-review";
 
 let db: SqlExecutor;
 

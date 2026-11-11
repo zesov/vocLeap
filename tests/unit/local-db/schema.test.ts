@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { SqlExecutor } from "./executor";
-import { createNodeExecutor } from "./testing/executor";
-import { getMeta, migrateLocalSchema, setMeta } from "./schema";
+import type { SqlExecutor } from "../../../lib/local-db/executor";
+import { createNodeExecutor } from "../../../lib/local-db/testing/executor";
+import { getMeta, migrateLocalSchema, setMeta } from "../../../lib/local-db/schema";
 
 let db: SqlExecutor;
 

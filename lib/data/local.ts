@@ -102,6 +102,9 @@ export function createLocalData(
         throw new Error("Adding new words is only available online");
       }
       const saved = await remote.saveWord(input);
+      // Pull the server row back so the local queue sees the new word now
+      // instead of at the next scheduled sync.
+      notify();
       return saved;
     },
 

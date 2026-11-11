@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatDateForDB, sm2Algorithm } from "./sm2";
+import { formatDateForDB, sm2Algorithm } from "../../../lib/srs/sm2";
 
 const base = { easeFactor: 2.5, interval: 0, repetitions: 0, rating: 4 };
 

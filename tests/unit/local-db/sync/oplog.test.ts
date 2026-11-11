@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { SqlExecutor } from "../executor";
-import { createNodeExecutor } from "../testing/executor";
-import { migrateLocalSchema } from "../schema";
+import type { SqlExecutor } from "../../../../lib/local-db/executor.ts";
+import { createNodeExecutor } from "../../../../lib/local-db/testing/executor.ts";
+import { migrateLocalSchema } from "../../../../lib/local-db/schema.ts";
 import {
   ackOps,
   clearOplog,
@@ -10,7 +10,7 @@ import {
   pendingCount,
   pendingReviewWordUuids,
   pendingWordUuids,
-} from "./oplog";
+} from "../../../../lib/local-db/sync/oplog.ts";
 
 let db: SqlExecutor;
 

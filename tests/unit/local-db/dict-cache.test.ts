@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { SqlExecutor } from "./executor";
-import { createNodeExecutor } from "./testing/executor";
-import { migrateLocalSchema } from "./schema";
+import type { SqlExecutor } from "../../../lib/local-db/executor";
+import { createNodeExecutor } from "../../../lib/local-db/testing/executor";
+import { migrateLocalSchema } from "../../../lib/local-db/schema";
 import {
   cacheKey,
   clearDictCache,
   getCachedDefinition,
   putCachedDefinition,
-} from "./dict-cache";
+} from "../../../lib/local-db/dict-cache";
 
 let db: SqlExecutor;
 

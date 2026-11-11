@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isWorkerRequest } from "./protocol";
+import { isWorkerRequest } from "../../../../lib/local-db/worker/protocol";
 
 describe("isWorkerRequest", () => {
   test("accepts a valid init request", () => {

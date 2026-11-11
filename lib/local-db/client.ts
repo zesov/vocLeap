@@ -53,9 +53,32 @@ interface InitOptions {
   email?: string;
   srsAlgorithm?: string;
   engine?: "auto" | "opfs" | "idb";
+  /**
+   * Runs before the database is published to readers. The app uses this for
+   * the first bootstrap pull so components see server data instead of an empty
+   * file. Failures are ignored: an offline first run must still come up.
+   */
+  bootstrap?: (db: SqlExecutor) => Promise<unknown>;
 }
 
 const LOCK_PREFIX = "vocleap-db-";
+
+// Storage-level failures mean the local file can no longer be read or written.
+// Keeping the handle would fail every later read, so the client drops it and
+// lets the facade fall back to the server API.
+const FATAL_STORAGE_ERROR =
+  /disk I\/O error|database disk image is malformed|database or disk is full|SQLITE_(?:FULL|IOERR|CORRUPT)|QuotaExceeded/i;
+
+// Errors that look like storage failures but are actually environment issues
+// (e.g., missing Web Locks API in private browsing). These should NOT trigger
+// the fatal fallback because they're not actual disk corruption.
+const NON_FATAL_STORAGE_ERROR =
+  /Web Locks API unavailable|navigator\.locks|Cannot read properties of undefined.*request/i;
+
+export function isFatalStorageError(message: string): boolean {
+  if (NON_FATAL_STORAGE_ERROR.test(message)) return false;
+  return FATAL_STORAGE_ERROR.test(message);
+}
 
 let state: LocalDbState = initialLocalDbState();
 let worker: Worker | null = null;
@@ -137,12 +160,10 @@ function attach(active: Worker) {
     if (!message || typeof message !== "object") return;
 
     if (message.type === "ready") {
+      // Do not publish the handle here: initLocalDb migrates the schema first.
+      // Publishing on "ready" lets component reads race the migration and hit
+      // a file with no tables.
       pending.delete(message.id);
-      handle = Object.assign(makeRemoteExecutor(), {
-        mode: message.mode,
-        engine: message.engine,
-      });
-      setState(reduceLocalDbState(state, message));
       return;
     }
 
@@ -156,22 +177,42 @@ function attach(active: Worker) {
     const entry = pending.get(message.id);
     if (!entry) return;
     pending.delete(message.id);
-    if (message.type === "result") entry.resolve(message.result);
-    else entry.reject(new Error(message.message));
+    if (message.type === "result") {
+      entry.resolve(message.result);
+      return;
+    }
+    if (isFatalStorageError(message.message)) {
+      failLocalDb(message.message);
+    }
+    entry.reject(new Error(message.message));
   });
 
   active.addEventListener("error", (event) => {
-    setState({
-      status: "failed",
-      mode: "online",
-      engine: null,
-      error: event.message || "Worker crashed",
-    });
-    for (const entry of pending.values()) {
-      entry.reject(new Error("Worker crashed"));
-    }
-    pending = new Map();
+    if (worker !== active) return;
+    failLocalDb(event.message || "Worker crashed");
   });
+}
+
+/**
+ * Tears down an unusable local database: pending calls reject, the worker is
+ * terminated, the cross-tab lock is released, and the facade switches to the
+ * server API. `state.error` keeps the reason visible in the banner.
+ */
+function teardownLocalDb(reason: string) {
+  const active = worker;
+  worker = null;
+  handle = null;
+  initializedFor = null;
+  for (const entry of pending.values()) entry.reject(new Error(reason));
+  pending = new Map();
+  active?.terminate();
+  releaseLock?.();
+  releaseLock = null;
+}
+
+function failLocalDb(error: string) {
+  teardownLocalDb(error);
+  setState({ status: "failed", mode: "online", engine: null, error });
 }
 
 export async function initLocalDb(options: InitOptions): Promise<LocalDbState> {
@@ -224,11 +265,20 @@ export async function initLocalDb(options: InitOptions): Promise<LocalDbState> {
 
     const event = await ready;
     if (event.type !== "ready") {
+      // attach() already recorded "busy" or "failed"; just drop the worker so a
+      // later attempt starts from a clean slate.
+      if (event.type === "db-busy" || event.type === "init-error") {
+        teardownLocalDb(event.message);
+      }
       return state;
     }
 
-    const db = handle;
-    if (!db) return state;
+    // The worker's engine is open, but the app must not see it until the
+    // schema exists: "ready" is published together with the handle below.
+    const db: LocalDbHandle = Object.assign(makeRemoteExecutor(), {
+      mode: event.mode,
+      engine: event.engine,
+    });
 
     try {
       await migrateLocalSchema(db);
@@ -239,14 +289,18 @@ export async function initLocalDb(options: InitOptions): Promise<LocalDbState> {
       if (options.srsAlgorithm) {
         await setMetaIfAbsent(db, "srs_algorithm", options.srsAlgorithm);
       }
+      if (options.bootstrap) {
+        try {
+          await options.bootstrap(db);
+        } catch {
+          // Bootstrap is best-effort: the background scheduler retries.
+        }
+      }
       initializedFor = options.userId;
+      handle = db;
+      setState(reduceLocalDbState(state, event));
     } catch (error) {
-      setState({
-        status: "failed",
-        mode: "online",
-        engine: null,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      failLocalDb(error instanceof Error ? error.message : String(error));
     }
     return state;
   })();
@@ -265,13 +319,7 @@ export async function closeLocalDb(): Promise<void> {
     } catch {
       // ignore: the worker may already be gone
     }
-    worker.terminate();
-    worker = null;
   }
-  handle = null;
-  pending = new Map();
-  initializedFor = null;
-  releaseLock?.();
-  releaseLock = null;
+  teardownLocalDb("Local database closed");
   setState(initialLocalDbState());
 }

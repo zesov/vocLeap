@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ensureSchema } from "../db/schema";
-import { createTestAdapter, type TestAdapter } from "../db/testing";
-import { ZERO_CURSOR } from "./cursor";
-import { pullPage } from "./server-pull";
+import { ensureSchema } from "../../../lib/db/schema.ts";
+import { createTestAdapter, type TestAdapter } from "../../../lib/db/testing.ts";
+import { ZERO_CURSOR } from "../../../lib/sync/cursor.ts";
+import { pullPage } from "../../../lib/sync/server-pull.ts";
 
 let db: TestAdapter;
 

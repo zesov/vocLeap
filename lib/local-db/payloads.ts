@@ -26,10 +26,11 @@ function jsonArray(value: unknown): string[] {
   }
 }
 
-/** Local row -> push payload (camelCase, JSON arrays, no server_id). */
+/** Local row -> push payload (camelCase, JSON arrays). */
 export function wordRowToPayload(row: Record<string, unknown>): WordPayload {
   return {
     uuid: str(row.uuid),
+    serverId: row.server_id == null ? null : Number(row.server_id),
     word: str(row.word),
     translation: str(row.translation),
     definitions: jsonArray(row.definitions),
