@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-12
+
 ### Added
 - **Rejected-op discard** — A server-rejected sync op used to sit at the head of the oplog forever, blocking every later change with no way out; the paused banner now carries the rejected op id and a Discard button (next to Retry) that removes the poison op from the oplog after a confirm (`SyncStatus.rejectedOpId` + `discardRejectedOp()` in `lib/local-db/sync/engine.ts`) and immediately re-syncs (`a521b64f`)
 
