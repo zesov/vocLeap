@@ -58,6 +58,7 @@ next-env.d.ts
 
 # Brainstorming visual companion sessions
 .superpowers/
+docs/superpowers/
 
 # Vendored WASM engines (copied by scripts/copy-wasm.ts)
 public/sqlite-wasm/

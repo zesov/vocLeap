@@ -16,7 +16,7 @@ Important files:
 - `app/(app)/words/page.tsx` — word list + Import Words button (triggers hidden file input, `.txt/.json/.csv`) + Sort by control (`date_desc|date_asc|alpha_asc|alpha_desc`) + phonetic line on each card
 - `components/NavBar.tsx` — nav items: Dictionary, Review, History, My Words; logo links to `/`
 - `lib/db/operations.ts` — `getReview()` maps snake_case DB columns to camelCase (fixes `NOT NULL constraint failed: reviews.ease_factor` on submission)
-- `lib/db/init.ts` — Dual-backend DB adapter. `DB_MODE=local` (default) uses `better-sqlite3` at `./data/vocleap.db`; `DB_MODE=turso` uses `@libsql/client` connecting to `TURSO_URL` (defaults to `libsql://your-database-your-org.turso.io`, auth via `TURSO_AUTH_TOKEN`). All DB operations are async through a unified `DatabaseAdapter` interface.
+- `lib/db/init.ts` — Dual-backend DB adapter. `DB_MODE=local` (default) uses `better-sqlite3` at `./data/vocleap.db`; `DB_MODE=turso` uses `@libsql/client` connecting to `TURSO_URL` (required, auth via `TURSO_AUTH_TOKEN`). All DB operations are async through a unified `DatabaseAdapter` interface.
 - `lib/srs/sm2.ts` — `parseRating("again"|"hard"|"good"|"easy")` → 0/3/4/5
 
 Notes:

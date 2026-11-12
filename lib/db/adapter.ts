@@ -24,9 +24,6 @@ export interface DatabaseAdapter {
   close(): Promise<void>;
 }
 
-export const DEFAULT_TURSO_URL =
-  "libsql://your-database-your-org.turso.io";
-
 class LocalStatement implements PreparedStatement {
   private getDb: () => Promise<Database.Database>;
   private sql: string;
@@ -156,7 +153,12 @@ class TursoAdapter implements DatabaseAdapter {
   private client: ReturnType<typeof createClient>;
 
   constructor() {
-    const url = process.env.TURSO_URL || DEFAULT_TURSO_URL;
+    const url = process.env.TURSO_URL;
+    if (!url) {
+      throw new Error(
+        "DB_MODE=turso requires TURSO_URL (e.g. libsql://<db>-<org>.turso.io)",
+      );
+    }
     const authToken = process.env.TURSO_AUTH_TOKEN;
     this.client = createClient({ url, authToken });
   }
@@ -200,7 +202,7 @@ export function createAdapter(): DatabaseAdapter {
 /** Human-readable description of the configured database, for scripts/logs. */
 export function describeDbTarget(): string {
   if (dbMode() === "turso") {
-    return `Turso (${process.env.TURSO_URL || DEFAULT_TURSO_URL})`;
+    return `Turso (${process.env.TURSO_URL ?? "(unset TURSO_URL)"})`;
   }
   return `local SQLite (${process.env.DB_PATH || "./data/vocleap.db"})`;
 }
