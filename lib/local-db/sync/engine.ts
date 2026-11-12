@@ -4,7 +4,7 @@ import type { SyncPushResponse } from "../../sync/types";
 import type { SqlExecutor } from "../executor";
 import { getMeta, setMeta } from "../schema";
 import { mergePullPage } from "./merge";
-import { ackOps, getPendingOps, pendingCount } from "./oplog";
+import { ackOps, discardOp, getPendingOps, pendingCount } from "./oplog";
 
 export class AuthRequiredError extends Error {
   constructor() {
@@ -20,6 +20,8 @@ export interface SyncStatus {
   pending: number;
   lastSyncedAt: string | null;
   error: string | null;
+  /** Set while paused: the op the server rejected, so the UI can discard it. */
+  rejectedOpId: string | null;
 }
 
 const MAX_PUSH_BATCHES = 10;
@@ -32,6 +34,7 @@ let status: SyncStatus = {
   pending: 0,
   lastSyncedAt: null,
   error: null,
+  rejectedOpId: null,
 };
 const listeners = new Set<(status: SyncStatus) => void>();
 
@@ -59,7 +62,23 @@ export function isSyncPaused(): boolean {
 
 export function resetSyncPause(): void {
   paused = false;
-  if (status.phase === "paused") emit({ phase: "idle", error: null });
+  if (status.phase === "paused") {
+    emit({ phase: "idle", error: null, rejectedOpId: null });
+  }
+}
+
+/**
+ * Escape hatch for a poison op the server always rejects: removes it from the
+ * oplog so the rest of the queue can sync again. Returns false when there is
+ * nothing recorded to discard (no pause, or the op already left the queue).
+ */
+export async function discardRejectedOp(db: SqlExecutor): Promise<boolean> {
+  const opId = status.rejectedOpId;
+  if (!opId) return false;
+  await discardOp(db, opId);
+  resetSyncPause();
+  emit({ pending: await pendingCount(db) });
+  return true;
 }
 
 function sameCursor(a: SyncCursor, b: SyncCursor): boolean {
@@ -122,19 +141,27 @@ export async function pushPendingOps(
   const body = (await response.json()) as SyncPushResponse;
   const settled: string[] = [];
   let rejection: string | null = null;
+  let rejectedOpId: string | null = null;
   for (const result of body.results) {
     if (result.accepted) settled.push(result.opId);
-    else rejection = result.reason ?? "rejected";
+    else if (rejection === null) {
+      // The oldest rejected op blocks the queue head; keep its id so the UI
+      // can offer to discard it.
+      rejection = result.reason ?? "rejected";
+      rejectedOpId = result.opId;
+    }
   }
   if (settled.length > 0) await ackOps(db, settled);
 
   if (rejection) {
     paused = true;
-    return emit({
+    emit({
       phase: "paused",
       pending: await pendingCount(db),
       error: rejection,
-    }).pending;
+      rejectedOpId,
+    });
+    return settled.length;
   }
   return settled.length;
 }
@@ -160,12 +187,18 @@ export async function runSyncOnce(
   if (running) return status;
 
   running = true;
-  emit({ phase: "syncing", error: null });
+  emit({ phase: "syncing", error: null, rejectedOpId: null });
 
   try {
     for (let batch = 0; batch < MAX_PUSH_BATCHES; batch += 1) {
       const settled = await pushPendingOps(db, { fetchImpl });
-      if (settled === 0) break;
+      if (settled === 0 || paused) break;
+    }
+    if (paused) {
+      // A push was rejected mid-cycle: stop here so the paused phase and the
+      // rejected op id stay visible instead of being overwritten by the
+      // success idle at the end of the cycle.
+      return emit({ phase: "paused", pending: await pendingCount(db) });
     }
 
     let cursor = await readCursor(db);
@@ -195,6 +228,7 @@ export async function runSyncOnce(
       pending: await pendingCount(db),
       lastSyncedAt,
       error: null,
+      rejectedOpId: null,
     });
   } catch (error) {
     if (error instanceof AuthRequiredError) {

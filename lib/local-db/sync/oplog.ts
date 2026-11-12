@@ -52,6 +52,11 @@ export async function getPendingOps(
   }));
 }
 
+/** Removes one op by id — the escape hatch for a poison op the server always rejects. */
+export async function discardOp(db: SqlExecutor, opId: string): Promise<void> {
+  await db.run("DELETE FROM sync_ops WHERE op_id = ?", [opId]);
+}
+
 export async function ackOps(db: SqlExecutor, opIds: string[]): Promise<void> {
   const CHUNK = 400;
   for (let start = 0; start < opIds.length; start += CHUNK) {

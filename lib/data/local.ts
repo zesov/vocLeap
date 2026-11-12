@@ -11,7 +11,8 @@ import {
   setAlgorithmLocal,
 } from "../local-db/operations";
 import { getReviewState, submitReviewLocal } from "../local-db/submit-review";
-import { scheduleReview } from "../srs/schedule";
+import { previewFsrsIntervals } from "../srs/fsrs";
+import { resolveFsrsState, scheduleReview } from "../srs/schedule";
 import { resolveClientTimezone } from "../timezone";
 import type { DataApi } from "./api";
 import type { IntervalPreview, Rating, SrsAlgorithm } from "./types";
@@ -73,6 +74,17 @@ export function createLocalData(
       const algorithm: SrsAlgorithm = await getAlgorithm(db);
       const review = await getReviewState(db, uuid);
       const now = new Date();
+      if (algorithm === "fsrs") {
+        // Same math as the server's action=intervals handler: preview all
+        // four grades from the FSRS state (seeded from the frozen SM-2
+        // columns when the word has no FSRS rows yet). Reading the SM-2
+        // interval column here would echo the same frozen value for every
+        // rating.
+        return {
+          algorithm,
+          intervals: previewFsrsIntervals(resolveFsrsState(review), now),
+        };
+      }
       const intervals = {} as Record<Rating, number>;
       for (const rating of RATINGS) {
         intervals[rating] = scheduleReview({

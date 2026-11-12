@@ -86,6 +86,19 @@ describe("local data", () => {
     ]);
   });
 
+  test("fsrs intervals preview uses the shared FSRS math, not the frozen SM-2 interval", async () => {
+    const data = createLocalData(db, remote, () => {});
+    await data.setSettings({ srsAlgorithm: "fsrs" });
+    const preview = await data.getIntervals(11);
+    expect(preview.algorithm).toBe("fsrs");
+    const { intervals } = preview;
+    // FSRS intervals grow with the grade. The old local path read the frozen
+    // SM-2 interval column, which echoed the same value for all four ratings.
+    expect(intervals.again).toBeLessThan(intervals.hard);
+    expect(intervals.hard).toBeLessThan(intervals.good);
+    expect(intervals.good).toBeLessThan(intervals.easy);
+  });
+
   test("translate caches online results and serves them offline", async () => {
     const data = createLocalData(db, remote, () => {});
     const first = await data.translate({
