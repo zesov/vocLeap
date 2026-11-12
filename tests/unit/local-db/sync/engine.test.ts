@@ -7,6 +7,7 @@ import { getMeta, migrateLocalSchema } from "../../../../lib/local-db/schema.ts"
 import { enqueueOp, getPendingOps } from "../../../../lib/local-db/sync/oplog.ts";
 import {
   AuthRequiredError,
+  discardRejectedOp,
   getSyncStatus,
   isSyncPaused,
   resetSyncPause,
@@ -80,18 +81,59 @@ describe("runSyncOnce", () => {
   });
 
   test("rejected ops stay queued and pause the engine", async () => {
-    await enqueueOp(db, "word", "delete", { uuid: "u1", deletedAt: "2026-11-01T00:00:00.000Z" });
+    const opId = await enqueueOp(db, "word", "delete", { uuid: "u1", deletedAt: "2026-11-01T00:00:00.000Z" });
 
-    const fetchImpl = (async () =>
-      json({ results: [{ opId: "x", accepted: false, reason: "unknown-word" }] })) as unknown as typeof fetch;
+    const calls: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === "/api/sync/push") {
+        const body = JSON.parse(String(init?.body)) as { ops: Array<{ opId: string }> };
+        return json({
+          results: body.ops.map((op) => ({ opId: op.opId, accepted: false, reason: "unknown-word" })),
+        });
+      }
+      return json(emptyPage());
+    }) as unknown as typeof fetch;
 
     await runSyncOnce(db, { fetchImpl });
     expect(isSyncPaused()).toBe(true);
     expect((await getPendingOps(db)).length).toBe(1);
+    // The cycle stops on rejection: no pull, and the paused phase survives.
+    expect(calls).toEqual(["/api/sync/push"]);
 
     const status = getSyncStatus();
     expect(status.phase).toBe("paused");
     expect(status.error).toContain("unknown-word");
+    expect(status.rejectedOpId).toBe(opId);
+  });
+
+  test("discardRejectedOp removes the poison op and unpauses", async () => {
+    await enqueueOp(db, "word", "delete", { uuid: "u1", deletedAt: "2026-11-01T00:00:00.000Z" });
+
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sync/push") {
+        const body = JSON.parse(String(init?.body)) as { ops: Array<{ opId: string }> };
+        return json({
+          results: body.ops.map((op) => ({ opId: op.opId, accepted: false, reason: "unknown-word" })),
+        });
+      }
+      return json(emptyPage());
+    }) as unknown as typeof fetch;
+
+    await runSyncOnce(db, { fetchImpl });
+    expect(isSyncPaused()).toBe(true);
+
+    expect(await discardRejectedOp(db)).toBe(true);
+    expect(await getPendingOps(db)).toHaveLength(0);
+    expect(isSyncPaused()).toBe(false);
+    expect(getSyncStatus().phase).toBe("idle");
+    expect(getSyncStatus().rejectedOpId).toBeNull();
+    expect(getSyncStatus().pending).toBe(0);
+
+    // Nothing recorded: a second call is a harmless no-op.
+    expect(await discardRejectedOp(db)).toBe(false);
   });
 
   test("401 raises AuthRequiredError", async () => {

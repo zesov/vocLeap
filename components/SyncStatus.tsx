@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getLocalDbState, subscribeLocalDb } from "@/lib/local-db/client";
 import {
+  getLocalDb,
+  getLocalDbState,
+  subscribeLocalDb,
+} from "@/lib/local-db/client";
+import {
+  discardRejectedOp,
   getSyncStatus,
   resetSyncPause,
   subscribeSync,
@@ -57,6 +62,20 @@ export default function SyncStatus() {
   }
 
   if (sync.phase === "paused") {
+    const discard = () => {
+      const db = getLocalDb();
+      if (!db) return;
+      if (
+        !window.confirm(
+          "Discard this change? It stays on this device and will never sync to the server."
+        )
+      ) {
+        return;
+      }
+      void discardRejectedOp(db).then((discarded) => {
+        if (discarded) requestSync();
+      });
+    };
     return (
       <p className="flex items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
         Sync paused{sync.error ? `: ${sync.error}` : ""}.
@@ -69,6 +88,13 @@ export default function SyncStatus() {
           }}
         >
           Retry
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/40"
+          onClick={discard}
+        >
+          Discard
         </button>
       </p>
     );
