@@ -42,18 +42,18 @@ When the preview is ready to ship:
 git checkout main
 git merge --no-ff dev             # the only way main receives feature work
 git push origin main
-bun run release --patch           # tag + GitHub Release, always from main
-git checkout dev
-git merge main                    # backmerge the release commit (CHANGELOG +
-git push origin dev               # package.json bump) so dev never lags
+bun run release --patch           # tag + GitHub Release + automatic main → dev
+                                  # backmerge (--skip-backmerge to opt out)
 ```
 
 Three rules keep the branches from diverging:
 
 1. A feature branch merges into exactly **one** destination (`dev`).
 2. Tags and GitHub Releases happen **only on `main`**.
-3. After every release, backmerge `main` → `dev` — the release commit bumps
-   `CHANGELOG.md` and `package.json` on `main`.
+3. The release script backmerges `main` → `dev` automatically (the release
+   commit bumps `CHANGELOG.md` and `package.json` on `main`). If the backmerge
+   fails — or you released with `--skip-backmerge` — finish it by hand:
+   `git checkout dev && git merge main && git push origin dev`.
 
 ## Before you open a PR
 

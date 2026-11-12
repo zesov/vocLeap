@@ -11,6 +11,7 @@
  *   --dry-run, -n     Preview only; nothing is written, committed or pushed
  *   --allow-empty     Allow a release when [Unreleased] has no entries
  *   --skip-checks     Skip the typecheck + unit-test gate before tagging
+ *   --skip-backmerge  Skip the automatic main → dev backmerge after the release
  *   --yes             Non-interactive: accept non-release branches without prompting
  *
  * What it does:
@@ -25,6 +26,9 @@
  * 5. Commit, annotated tag (argv-array spawn, so backticks/quotes in the
  *    notes are never interpreted by a shell), push branch + tag
  * 6. GitHub Release from a --notes-file temp file
+ * 7. Backmerges main → dev so the preview branch never lags behind the
+ *    release commit (skipped with --skip-backmerge or when the release
+ *    branch isn't main)
  *
  * Every git step aborts the script on a non-zero exit code, so a tag can
  * never point at a commit that predates the release changes.
@@ -38,7 +42,7 @@ import { createInterface } from "node:readline/promises";
 const CHANGELOG_PATH = resolve(import.meta.dir, "../CHANGELOG.md");
 const PACKAGE_JSON_PATH = resolve(import.meta.dir, "../package.json");
 const REPO = "zesov/vocLeap"; // Update if repo name changes
-const RELEASE_BRANCHES = ["main", "master", "open"];
+const RELEASE_BRANCHES = ["main", "master"];
 
 interface ReleaseOptions {
   version: string;
@@ -46,6 +50,7 @@ interface ReleaseOptions {
   bumpType?: "patch" | "minor" | "major";
   allowEmpty: boolean;
   skipChecks: boolean;
+  skipBackmerge: boolean;
   yes: boolean;
 }
 
@@ -57,6 +62,7 @@ const KNOWN_FLAGS = new Set([
   "-n",
   "--allow-empty",
   "--skip-checks",
+  "--skip-backmerge",
   "--yes",
 ]);
 
@@ -71,6 +77,7 @@ Flags:
   --dry-run, -n     Preview only; nothing is written, committed or pushed
   --allow-empty     Allow a release when [Unreleased] has no entries
   --skip-checks     Skip the typecheck + unit-test gate before tagging
+  --skip-backmerge  Skip the automatic main → dev backmerge after the release
   --yes             Non-interactive: accept non-release branches without prompting
 `;
 }
@@ -107,6 +114,7 @@ function parseArgs(): ReleaseOptions {
     bumpType: bumpType?.replace(/^--/, "") as ReleaseOptions["bumpType"],
     allowEmpty: args.includes("--allow-empty"),
     skipChecks: args.includes("--skip-checks"),
+    skipBackmerge: args.includes("--skip-backmerge"),
     yes: args.includes("--yes"),
   };
 }
@@ -313,7 +321,7 @@ function ghAvailable(): boolean {
 }
 
 async function main() {
-  const { version: explicitVersion, dryRun, bumpType, allowEmpty, skipChecks, yes } = parseArgs();
+  const { version: explicitVersion, dryRun, bumpType, allowEmpty, skipChecks, skipBackmerge, yes } = parseArgs();
 
   const currentVersion = getCurrentVersion();
   let version: string;
@@ -463,6 +471,36 @@ async function main() {
       console.warn("⚠️  Failed to create the GitHub Release (the tag is pushed).");
       console.warn(`   You can create it manually at: https://github.com/${REPO}/releases/new?tag=${tag}`);
       if (result.stderr.trim()) console.warn(result.stderr.trim());
+    }
+  }
+
+  // 8. Backmerge the release commit into dev: the preview branch must never
+  // lag behind main (the release commit bumps CHANGELOG.md/package.json on
+  // main only). Non-fatal — the release itself is already shipped.
+  if (dryRun) {
+    console.log("[DRY RUN] git checkout dev && git merge main && git push origin dev");
+  } else if (skipBackmerge) {
+    console.log("\n⏭️  Skipping the main → dev backmerge (--skip-backmerge).");
+  } else if (branch !== "main") {
+    console.warn(`\n⚠️  Released from "${branch}", not main — skipping the dev backmerge.`);
+  } else if (run(["git", "rev-parse", "--verify", "refs/heads/dev"], { quiet: true }).exitCode !== 0) {
+    console.warn("\n⚠️  No local dev branch — skipped the backmerge (set it up with: git checkout -b dev origin/dev).");
+  } else {
+    console.log("\n🔁 Backmerging main → dev...");
+    let backmerged = true;
+    for (const cmd of [["git", "checkout", "dev"], ["git", "merge", "main"], ["git", "push", "origin", "dev"]]) {
+      const r = run(cmd);
+      if (r.exitCode !== 0) {
+        console.error(`❌ Backmerge failed at: ${cmd.join(" ")}`);
+        if (r.stderr.trim()) console.error(r.stderr.trim());
+        backmerged = false;
+        break;
+      }
+    }
+    if (backmerged) {
+      console.log("✅ dev synced with the release (staying on dev for the next feature branch)");
+    } else {
+      console.warn("⚠️  Finish the backmerge by hand: git checkout dev && git merge main && git push origin dev");
     }
   }
 
