@@ -125,7 +125,7 @@ async function count(table: string): Promise<number> {
 
 function describeTarget(): string {
   if ((process.env.DB_MODE || "local") === "turso") {
-    return `turso ${process.env.TURSO_URL || "(default url)"}`;
+    return `turso ${process.env.TURSO_URL || "(unset TURSO_URL)"}`;
   }
   return `local ${process.env.DB_PATH || "./data/vocleap.db"}`;
 }
