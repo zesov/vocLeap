@@ -141,9 +141,10 @@ interface Stats {
 }
 
 /**
- * Local SM-2 fallback preview, shown until the server preview (action=intervals)
- * responds. The server is the source of truth: it computes with the user's
- * active algorithm (SM-2 or FSRS).
+ * Local SM-2 preview used while the facade preview (action=intervals) is in
+ * flight, and offline for SM-2 users. Only valid for SM-2: in FSRS mode the
+ * SM-2 columns are frozen and would echo the same stale interval for every
+ * rating, so the UI shows a placeholder until the FSRS preview arrives.
  */
 function getNextIntervals(review: Review): Record<Rating, number> {
   const ratings: Rating[] = ["again", "hard", "good", "easy"];
@@ -327,8 +328,9 @@ export function ReviewSession() {
   const totalReviews = reviewedBeforeBatch + reviews.length;
   const sessionBacklog = sessionTotal > 0 ? sessionTotal : totalReviews;
 
-  // Interval previews must come from the server: the active SRS algorithm
-  // (SM-2 or FSRS) is a per-user setting only the API knows.
+  // Interval previews must come from the facade: the active SRS algorithm
+  // (SM-2 or FSRS) is a per-user setting. The response also re-syncs
+  // `algorithm` for the FSRS stats line.
   useEffect(() => {
     const wordId = reviews[currentIndex]?.wordId;
     if (!wordId) return;
@@ -782,7 +784,11 @@ export function ReviewSession() {
   }, [handleRate, showAnswer]);
 
   const formatInterval = (interval: number) => {
-    if (interval < 1) return "< 1 day";
+    // FSRS previews are fractional days; sub-day intervals read as hours.
+    if (interval < 1) {
+      const hours = Math.max(1, Math.round(interval * 24));
+      return `${hours} hour${hours === 1 ? "" : "s"}`;
+    }
     if (interval === 1) return "1 day";
     if (interval < 7) return `${interval} days`;
     if (interval < 30) {
@@ -862,8 +868,11 @@ export function ReviewSession() {
 
   const currentPosition = reviewedBeforeBatch + currentIndex + 1;
   const progress = reviews.length > 0 ? ((currentIndex + 1) / reviews.length) * 100 : 0;
+  // SM-2 gets a local instant preview; FSRS never falls back to the frozen
+  // SM-2 math — its buttons show a placeholder until the preview arrives.
   const nextIntervals =
-    intervalsByWord.get(currentReview.wordId) ?? getNextIntervals(currentReview);
+    intervalsByWord.get(currentReview.wordId) ??
+    (algorithm === "sm2" ? getNextIntervals(currentReview) : null);
 
   // In FSRS mode the SM-2 columns (interval/repetitions/ease_factor) are
   // frozen by the API — live state lives in fsrsState (fsrs_reps,
@@ -1002,7 +1011,11 @@ export function ReviewSession() {
                         key={rating}
                         onClick={() => handleRate(rating)}
                         variant="primary"
-                        aria-label={`${RATING_CONFIG[rating].label} - next review in ${formatInterval(nextIntervals[rating])}`}
+                        aria-label={
+                          nextIntervals
+                            ? `${RATING_CONFIG[rating].label} - next review in ${formatInterval(nextIntervals[rating])}`
+                            : RATING_CONFIG[rating].label
+                        }
                         className={`${RATING_CONFIG[rating].color} relative overflow-hidden text-white py-2 text-sm flex-col gap-0.5`}
                         disabled={pendingRating !== null}
                       >
@@ -1014,7 +1027,7 @@ export function ReviewSession() {
                             pendingRating === rating ? "invisible" : ""
                           }`}
                         >
-                          {formatInterval(nextIntervals[rating])}
+                          {nextIntervals ? formatInterval(nextIntervals[rating]) : "…"}
                         </span>
                         {pendingRating === rating && (
                           <svg
