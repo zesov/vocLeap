@@ -16,6 +16,45 @@ bun run dev
 Open http://localhost:3000 and sign up — the local database is created
 automatically on first start.
 
+## Branching model
+
+- **`main`** — production. The only branch that gets tagged and released
+  (`bun run release --patch` runs here).
+- **`dev`** — preview. Features land here first; the Vercel preview deployment
+  tracks it, so unreleased work is testable before shipping.
+- **Feature branches** (`feat/…`, `fix/…`) are short-lived and merge into
+  **`dev` only** — never straight into `main`, and never into both.
+
+```bash
+git checkout dev && git pull
+git checkout -b feat/xxx          # one branch = one topic
+# …work, conventional commits…
+git merge dev                     # keep the branch current if dev moved
+git checkout dev
+git merge --no-ff feat/xxx        # keeps the feature grouped in history
+git push origin dev               # preview deployment updates
+git branch -d feat/xxx
+```
+
+When the preview is ready to ship:
+
+```bash
+git checkout main
+git merge --no-ff dev             # the only way main receives feature work
+git push origin main
+bun run release --patch           # tag + GitHub Release, always from main
+git checkout dev
+git merge main                    # backmerge the release commit (CHANGELOG +
+git push origin dev               # package.json bump) so dev never lags
+```
+
+Three rules keep the branches from diverging:
+
+1. A feature branch merges into exactly **one** destination (`dev`).
+2. Tags and GitHub Releases happen **only on `main`**.
+3. After every release, backmerge `main` → `dev` — the release commit bumps
+   `CHANGELOG.md` and `package.json` on `main`.
+
 ## Before you open a PR
 
 Run all three checks locally:
