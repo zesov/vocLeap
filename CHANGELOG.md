@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-14
+
 ### Changed
 - **Automatic `main` → `dev` backmerge** — `scripts/release.ts` gained a step 8 that checks out `dev`, merges `main`, and pushes `origin dev` after a release, so the preview branch never lags behind the release commit (`CHANGELOG.md`/`package.json` bumps land on `main` only); it is non-fatal (prints the manual commands if it fails), skipped via `--skip-backmerge` or when the release branch isn't `main`, and the branch allowlist is now just `main`/`master` — `CONTRIBUTING.md`/`AGENTS.md` document the dev-preview branching model (`b417e46`, `46d25d5`)
 
