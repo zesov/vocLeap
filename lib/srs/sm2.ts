@@ -90,12 +90,3 @@ export function parseRating(rating: "again" | "hard" | "good" | "easy"): number 
     default: return 3;
   }
 }
-
-export const RATING_LABELS: Record<number, string> = {
-  0: "Again",
-  1: "Hard",
-  2: "Hard",
-  3: "Good",
-  4: "Easy",
-  5: "Perfect",
-};

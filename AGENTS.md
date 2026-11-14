@@ -33,6 +33,7 @@ Important files:
 - `lib/srs/sm2.ts` — `parseRating("again"|"hard"|"good"|"easy")` → 0/3/4/5
 
 Notes:
+- Branching: `main` = production — releases and tags happen only there (`bun run release --patch` on main). `dev` = preview branch (Vercel). Feature branches merge into `dev` only (never straight into `main`, never both); shipping is `dev` → `main` with `--no-ff`, and the release script backmerges `main` → `dev` automatically.
 - The client worker DB needs a SharedArrayBuffer-capable context; `SWWarmup.tsx` + `LocalDbInit.tsx` boot it, and only one tab may own the worker (SyncStatus banners "open in another tab" otherwise).
 - E2E tests live in `tests/e2e/` (Playwright, baseURL `http://localhost:3001` in `playwright.config.ts`; PWA variant `playwright.pwa.config.ts`); unit tests in `tests/unit/` (e.g. `tests/unit/local-db/sync/engine.test.ts`).
 

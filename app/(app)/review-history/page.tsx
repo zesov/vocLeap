@@ -10,13 +10,13 @@ const ITEMS_PER_PAGE = 30;
 
 type RatingLabel = Record<number, { label: string; color: string }>;
 
+// Stored ratings use the SM-2 scale (parseRating / RATING_TO_SM2_SCALE):
+// again=0, hard=3, good=4, easy=5 — same names as ReviewSession's buttons.
 const RATING_LABELS: RatingLabel = {
   0: { label: "Again", color: "text-red-600 dark:text-red-400" },
-  1: { label: "Hard", color: "text-orange-600 dark:text-orange-400" },
-  2: { label: "Hard", color: "text-orange-600 dark:text-orange-400" },
-  3: { label: "Good", color: "text-blue-600 dark:text-blue-400" },
-  4: { label: "Easy", color: "text-green-600 dark:text-green-400" },
-  5: { label: "Perfect", color: "text-green-700 dark:text-green-300" },
+  3: { label: "Hard", color: "text-orange-600 dark:text-orange-400" },
+  4: { label: "Good", color: "text-blue-600 dark:text-blue-400" },
+  5: { label: "Easy", color: "text-green-600 dark:text-green-400" },
 };
 
 export default function ReviewHistoryPage() {
@@ -157,7 +157,9 @@ export default function ReviewHistoryPage() {
               </thead>
               <tbody>
                 {history.map((entry: HistoryEntry) => {
-                  const ratingInfo = RATING_LABELS[entry.rating] || RATING_LABELS[3];
+                  // Fallback covers legacy/garbage values (1–2 never occur in
+                  // current data; classic SM-2 treats them as failed recall).
+                  const ratingInfo = RATING_LABELS[entry.rating] || RATING_LABELS[0];
                   return (
                     <tr
                       key={entry.uuid ?? entry.id}
