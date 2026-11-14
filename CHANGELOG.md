@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Review stats line formatting** — The card footer printed raw floating-point intervals (`Last interval: 1.999996875 days` for a nominal 2-day interval) because the 1–7 day branch of `formatInterval()` never rounded; it now rounds to one decimal place (`2.0 days`), and the FSRS stability value no longer carries a redundant `d` suffix (`D: 10.0 • S: 0.2`) (`9d4407f`)
+
 ## [0.10.1] - 2026-11-14
 
 ### Changed
