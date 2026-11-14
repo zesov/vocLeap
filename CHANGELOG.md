@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Automatic `main` → `dev` backmerge** — `scripts/release.ts` gained a step 8 that checks out `dev`, merges `main`, and pushes `origin dev` after a release, so the preview branch never lags behind the release commit (`CHANGELOG.md`/`package.json` bumps land on `main` only); it is non-fatal (prints the manual commands if it fails), skipped via `--skip-backmerge` or when the release branch isn't `main`, and the branch allowlist is now just `main`/`master` — `CONTRIBUTING.md`/`AGENTS.md` document the dev-preview branching model (`b417e46`, `46d25d5`)
+
+### Fixed
+- **Review history rating labels** — The history table labelled stored ratings off a stale map (1/2 both "Hard", 3 "Good", 4 "Easy", 5 "Perfect") even though ratings are stored on the SM-2 scale (`again=0, hard=3, good=4, easy=5`) and the review buttons say Again/Hard/Good/Easy; the labels now match the buttons and legacy/unknown values fall back to "Again" (the unused `RATING_LABELS` export in `lib/srs/sm2.ts` is removed) (`12a830b`)
+
 ## [0.10.0] - 2026-11-12
 
 ### Added
