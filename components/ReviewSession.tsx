@@ -789,8 +789,11 @@ export function ReviewSession() {
       const hours = Math.max(1, Math.round(interval * 24));
       return `${hours} hour${hours === 1 ? "" : "s"}`;
     }
-    if (interval === 1) return "1 day";
-    if (interval < 7) return `${interval} days`;
+    if (interval < 7) {
+      // Date arithmetic yields 1.999996875 for a 2-day interval; round to 1 dp.
+      const days = Math.round(interval * 10) / 10;
+      return `${days.toFixed(1)} ${days === 1 ? "day" : "days"}`;
+    }
     if (interval < 30) {
       const weeks = Math.round(interval / 7);
       return `${weeks} week${weeks === 1 ? "" : "s"}`;
@@ -999,7 +1002,7 @@ export function ReviewSession() {
                       <>
                         {" "}• Repetition #{repetitionCount}
                         {fsrsState
-                          ? ` • D: ${fsrsState.difficulty.toFixed(1)} • S: ${fsrsState.stability.toFixed(1)}d`
+                          ? ` • D: ${fsrsState.difficulty.toFixed(1)} • S: ${fsrsState.stability.toFixed(1)}`
                           : ` • EF: ${currentReview.easeFactor.toFixed(2)}`}
                       </>
                     )}
