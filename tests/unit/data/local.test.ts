@@ -125,7 +125,7 @@ describe("local data", () => {
     expect((await data.getSettings()).srsAlgorithm).toBe("fsrs");
   });
 
-  test("saveWord delegates to the remote API while online", async () => {
+  test("saveWord is local-first: no remote call even while online", async () => {
     const data = createLocalData(db, remote, () => {});
     await data.saveWord({
       word: "pear",
@@ -133,7 +133,24 @@ describe("local data", () => {
       sourceLanguage: "en",
       targetLanguage: "zh-CN",
     });
-    expect(remoteCalls).toEqual(["saveWord"]);
+    expect(remoteCalls).toEqual([]);
+    const rows = await db.all("SELECT word FROM words");
+    expect(rows.map((r) => String(r.word)).sort()).toEqual(["apple", "pear"]);
+  });
+
+  test("saveWords routes bulk imports through the local batch with server semantics", async () => {
+    const data = createLocalData(db, remote, () => {});
+    const result = await data.saveWords([
+      { word: "plum", translation: "李子" },
+      { word: "apple", translation: "already on the device" },
+      { word: "pear", translation: "" },
+    ]);
+    expect(remoteCalls).toEqual([]);
+    expect(result.imported).toBe(1);
+    expect(result.failed).toBe(2);
+    expect(result.results.find((r) => r.word === "apple")?.error).toBe(
+      "Word already exists"
+    );
   });
 
   test("saveWord triggers a sync so the new word is pulled locally", async () => {
@@ -147,6 +164,17 @@ describe("local data", () => {
       sourceLanguage: "en",
       targetLanguage: "zh-CN",
     });
+    expect(syncRequests).toBe(1);
+  });
+
+  test("saveWords only triggers a sync when at least one entry was imported", async () => {
+    let syncRequests = 0;
+    const data = createLocalData(db, remote, () => {
+      syncRequests += 1;
+    });
+    await data.saveWords([{ word: "apple", translation: "duplicate" }]);
+    expect(syncRequests).toBe(0);
+    await data.saveWords([{ word: "plum", translation: "李子" }]);
     expect(syncRequests).toBe(1);
   });
 });
