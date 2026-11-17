@@ -61,6 +61,16 @@ export default function SyncStatus() {
     );
   }
 
+  // A timed-out sync is transient (the scheduler retries every 60 s and on
+  // connectivity events); keep it calm instead of an error wall.
+  if (sync.phase === "error" && sync.error?.includes("timed out")) {
+    return (
+      <p className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-center text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">
+        Network too slow — sync paused for now and will retry automatically.
+      </p>
+    );
+  }
+
   if (sync.phase === "paused") {
     const discard = () => {
       const db = getLocalDb();

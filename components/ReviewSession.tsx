@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { parseRating, sm2Algorithm } from "@/lib/srs/sm2";
 import { isSessionStateStale } from "@/lib/review-session-state";
 import { formatPhonetic } from "@/lib/format/phonetic";
+import { useSyncDataVersion } from "@/lib/data/data-version";
 import { ApiError } from "@/lib/data";
 import { useData } from "@/lib/data/use-data";
 
@@ -269,6 +270,10 @@ function mergeServerState(
 export function ReviewSession() {
   const router = useRouter();
   const data = useData();
+  // Bumped when a background sync pull merges data. An offline cold start
+  // (queue fetched before the first pull landed) re-fetches via syncEpoch
+  // below; an active session never re-fetches.
+  const dataVersion = useSyncDataVersion();
   const [mode, setMode] = useState<Mode>("review");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -659,6 +664,18 @@ export function ReviewSession() {
     if (!synced || sessionLoadedRef.current) return;
     void fetchReviews();
   }, [data, synced, fetchReviews]);
+
+  // Same rescue path for a pull that lands after the queue loaded empty: the
+  // background sync merges server data into the local file (dataVersion
+  // bumps) and the queue re-fetches — but only while no session has started,
+  // so an active session is never rebuilt.
+  const prevDataVersionRef = useRef(dataVersion);
+  useEffect(() => {
+    if (prevDataVersionRef.current === dataVersion) return;
+    prevDataVersionRef.current = dataVersion;
+    if (!synced || sessionLoadedRef.current) return;
+    void fetchReviews();
+  }, [dataVersion, synced, fetchReviews]);
 
   // Save position to legacy localStorage (for backward compat)
   useEffect(() => {
