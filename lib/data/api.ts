@@ -5,6 +5,7 @@ import type {
   IntervalPreview,
   Rating,
   ReviewWithWord,
+  SaveWordsResult,
   Settings,
   SrsAlgorithm,
   Stats,
@@ -42,6 +43,18 @@ export interface DataApi {
     sourceLanguage: string;
     targetLanguage: string;
   }): Promise<WordRecord>;
+  saveWords(
+    entries: Array<{
+      word: string;
+      translation: string;
+      definitions?: string[];
+      examples?: string[];
+      phonetic?: string;
+      audioUrl?: string;
+      sourceLanguage?: string;
+      targetLanguage?: string;
+    }>
+  ): Promise<SaveWordsResult>;
   translate(input: {
     word: string;
     sourceLanguage: string;

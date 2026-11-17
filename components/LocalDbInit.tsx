@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
+import { remoteData } from "@/lib/data/remote";
+import { withDeadline } from "@/lib/deadline";
 import { getLocalDb, initLocalDb } from "@/lib/local-db/client";
+import { backfillBareWords } from "@/lib/local-db/backfill";
 import { runSyncOnce, startSyncScheduler } from "@/lib/local-db/sync/engine";
 import { flushPendingOpsOnPageExit } from "@/lib/local-db/sync/trigger";
 
@@ -10,6 +13,14 @@ interface LocalDbInitProps {
   email: string;
   srsAlgorithm: "sm2" | "fsrs";
 }
+
+/**
+ * The bootstrap pull must never hold the app hostage on a bad network: after
+ * this deadline the local DB publishes anyway (possibly empty) and the sync
+ * keeps running in the background. Pages showing nothing re-fetch when the
+ * late pull merges data (see lib/data/data-version.ts).
+ */
+const BOOTSTRAP_DEADLINE_MS = 2500;
 
 /**
  * Boots the per-user browser database once per signed-in session and starts
@@ -32,13 +43,18 @@ export default function LocalDbInit({
       userId,
       email,
       srsAlgorithm,
-      // First run on this device: pull the server state before components read
-      // the file. runSyncOnce reports failures as sync status, so this only
-      // delays readiness by one round trip.
-      bootstrap: (db) => runSyncOnce(db),
+      // Best-effort first pull before components read the file, capped so a
+      // hanging request cannot delay readiness beyond the deadline.
+      bootstrap: (db) => withDeadline(runSyncOnce(db), BOOTSTRAP_DEADLINE_MS),
     }).then((state) => {
       if (cancelled || state.status !== "ready") return;
-      stopSync = startSyncScheduler({ db: () => getLocalDb() });
+      stopSync = startSyncScheduler({
+        db: () => getLocalDb(),
+        // Enrich offline-saved bare words after each fully successful cycle.
+        onIdle: (db) => {
+          void backfillBareWords(db, remoteData);
+        },
+      });
       // The debounced push dies with the page; flush pending ops (ratings
       // written seconds before a reload/close) with a keepalive request so
       // the next visit does not resurrect already-reviewed words.

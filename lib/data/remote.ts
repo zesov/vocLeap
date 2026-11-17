@@ -1,4 +1,5 @@
 import { resolveClientTimezone } from "../timezone";
+import { fetchWithTimeout } from "./fetch-timeout";
 import type { DataApi } from "./api";
 import type {
   DictionaryResult,
@@ -6,6 +7,7 @@ import type {
   HistoryPage,
   IntervalPreview,
   ReviewWithWord,
+  SaveWordsResult,
   Settings,
   WordRecord,
   WordsPage,
@@ -21,16 +23,30 @@ export class ApiError extends Error {
   }
 }
 
+/** A slow network must fail fast instead of freezing the UI. */
+const DEFAULT_TIMEOUT_MS = 6000;
+// Dictionary lookups fan out to Wiktionary / Google Translate upstream.
+const TRANSLATE_TIMEOUT_MS = 20000;
+
 function timezone(): string {
   return resolveClientTimezone(undefined) ?? "UTC";
 }
 
 export function createRemoteData(fetchImpl: typeof fetch = fetch): DataApi {
-  async function request<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await fetchImpl(url, {
-      credentials: "same-origin",
-      ...init,
-    });
+  async function request<T>(
+    url: string,
+    init?: RequestInit,
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
+  ): Promise<T> {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        credentials: "same-origin",
+        ...init,
+      },
+      timeoutMs,
+      fetchImpl
+    );
     if (!response.ok) {
       let message = `Request failed with ${response.status}`;
       try {
@@ -44,12 +60,16 @@ export function createRemoteData(fetchImpl: typeof fetch = fetch): DataApi {
     return (await response.json()) as T;
   }
 
-  function post<T>(url: string, body: unknown): Promise<T> {
-    return request<T>(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+  function post<T>(url: string, body: unknown, timeoutMs?: number): Promise<T> {
+    return request<T>(
+      url,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      timeoutMs
+    );
   }
 
   return {
@@ -115,11 +135,25 @@ export function createRemoteData(fetchImpl: typeof fetch = fetch): DataApi {
 
     translate({ word, sourceLanguage, targetLanguage }) {
       // The /api/translate route takes `sourceLang`/`targetLang` keys.
-      return post<DictionaryResult>("/api/translate", {
-        word,
-        sourceLang: sourceLanguage,
-        targetLang: targetLanguage,
-      });
+      return post<DictionaryResult>(
+        "/api/translate",
+        {
+          word,
+          sourceLang: sourceLanguage,
+          targetLang: targetLanguage,
+        },
+        TRANSLATE_TIMEOUT_MS
+      );
+    },
+
+    async saveWords(entries) {
+      const result = await post<SaveWordsResult>("/api/words", entries);
+      return {
+        imported: result.imported,
+        failed: result.failed,
+        total: result.total,
+        results: result.results ?? [],
+      };
     },
 
     async setSettings(input) {

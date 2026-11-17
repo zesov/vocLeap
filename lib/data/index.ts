@@ -24,5 +24,6 @@ export function getData(): DataApi {
 }
 
 export type { DataApi } from "./api";
+export { isTimeoutError } from "./fetch-timeout";
 export { ApiError } from "./remote";
 export { remoteData } from "./remote";

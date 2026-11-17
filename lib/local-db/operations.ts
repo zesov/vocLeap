@@ -3,12 +3,15 @@ import type {
   HistoryPage,
   ReviewSnapshot,
   ReviewWithWord,
+  SaveWordEntryResult,
+  SaveWordsResult,
   SrsAlgorithm,
   Stats,
   WordRecord,
   WordSort,
   WordsPage,
 } from "../data/types";
+import { uuidv7 } from "../uuid";
 import type { SqlExecutor, SqlStep } from "./executor";
 import { wordRowToPayload } from "./payloads";
 import { enqueueOpStep } from "./sync/oplog";
@@ -44,6 +47,10 @@ function jsonArray(value: unknown): string[] {
   } catch {
     return [];
   }
+}
+
+function placeholders(count: number): string {
+  return Array.from({ length: count }, () => "?").join(", ");
 }
 
 function wordFromRow(row: Record<string, unknown>): WordRecord {
@@ -387,4 +394,233 @@ export async function deleteWordLocal(
   if (result.changes === 0) return false;
   await db.run(op.step.sql, op.step.params);
   return true;
+}
+
+export interface SaveWordLocalInput {
+  word: string;
+  translation: string;
+  definitions?: string[];
+  examples?: string[];
+  phonetic?: string;
+  audioUrl?: string;
+  sourceLanguage?: string;
+  targetLanguage?: string;
+}
+
+function normalizeSaveInput(input: SaveWordLocalInput) {
+  return {
+    word: input.word.trim(),
+    translation: input.translation ?? "",
+    definitions: input.definitions ?? [],
+    examples: input.examples ?? [],
+    phonetic: input.phonetic ?? null,
+    audioUrl: input.audioUrl ?? null,
+    sourceLanguage: input.sourceLanguage || "en",
+    targetLanguage: input.targetLanguage || "zh-CN",
+  };
+}
+
+function wordRowFromSave(
+  uuid: string,
+  input: ReturnType<typeof normalizeSaveInput>,
+  now: string
+): Record<string, unknown> {
+  return {
+    uuid,
+    server_id: null,
+    word: input.word,
+    translation: input.translation,
+    definitions: JSON.stringify(input.definitions),
+    examples: JSON.stringify(input.examples),
+    phonetic: input.phonetic,
+    audio_url: input.audioUrl,
+    source_language: input.sourceLanguage,
+    target_language: input.targetLanguage,
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+}
+
+const INSERT_WORD_SQL = `
+  INSERT INTO words (
+    uuid, server_id, word, translation, definitions, examples, phonetic,
+    audio_url, source_language, target_language, created_at, updated_at, deleted_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+/**
+ * Local-first single-word save, mirroring the server's single POST (an
+ * intentional upsert). Writes the row and the sync op in ONE batch so a
+ * crash cannot produce a word the server will never learn about. Works
+ * offline: the op waits in the oplog until connectivity returns.
+ */
+export async function saveWordLocal(
+  db: SqlExecutor,
+  input: SaveWordLocalInput
+): Promise<WordRecord> {
+  const normalized = normalizeSaveInput(input);
+  if (!normalized.word) throw new Error("Word is required");
+
+  const rows = await db.all<{ uuid: string }>(
+    "SELECT uuid FROM words WHERE word = ? AND deleted_at IS NULL",
+    [normalized.word]
+  );
+  const existingUuid = rows[0]?.uuid;
+
+  if (existingUuid) {
+    await updateWordLocal(db, existingUuid, {
+      translation: normalized.translation,
+      definitions: normalized.definitions,
+      examples: normalized.examples,
+      phonetic: normalized.phonetic ?? undefined,
+      audioUrl: normalized.audioUrl ?? undefined,
+      sourceLanguage: normalized.sourceLanguage,
+      targetLanguage: normalized.targetLanguage,
+    });
+    const updated = await db.all(
+      "SELECT * FROM words WHERE uuid = ?",
+      [existingUuid]
+    );
+    return wordFromRow(updated[0]);
+  }
+
+  const now = new Date().toISOString();
+  const row = wordRowFromSave(uuidv7(), normalized, now);
+  const op = enqueueOpStep("word", "upsert", { ...wordRowToPayload(row) });
+  await db.batch([
+    {
+      sql: INSERT_WORD_SQL,
+      params: [
+        row.uuid,
+        row.server_id,
+        row.word,
+        row.translation,
+        row.definitions,
+        row.examples,
+        row.phonetic,
+        row.audio_url,
+        row.source_language,
+        row.target_language,
+        row.created_at,
+        row.updated_at,
+        row.deleted_at,
+      ],
+    },
+    op.step,
+  ]);
+  return wordFromRow(row);
+}
+
+/**
+ * Local-first bulk import, mirroring the server's bulk POST semantics:
+ * entries missing word/translation fail, existing words count as failed
+ * ("Word already exists") and are not overwritten. Every accepted entry
+ * becomes one row + one op inside a single batch.
+ */
+export async function saveWordsLocal(
+  db: SqlExecutor,
+  entries: SaveWordLocalInput[]
+): Promise<SaveWordsResult> {
+  const results: SaveWordEntryResult[] = [];
+  const inserts: Array<{ row: Record<string, unknown> }> = [];
+
+  const candidates = entries
+    .map((entry) => ({ entry, normalized: normalizeSaveInput(entry) }))
+    .filter(({ entry, normalized }) => {
+      if (normalized.word && normalized.translation) return true;
+      results.push({
+        word: normalized.word || String((entry as { word?: unknown }).word ?? ""),
+        success: false,
+        error: "Word and translation are required",
+      });
+      return false;
+    });
+
+  const existingRows =
+    candidates.length > 0
+      ? await db.all<{ word: string; server_id: number | null }>(
+          `SELECT word, server_id FROM words
+           WHERE word IN (${placeholders(candidates.length)})
+             AND deleted_at IS NULL`,
+          candidates.map(({ normalized }) => normalized.word)
+        )
+      : [];
+  const existingWords = new Set(existingRows.map((row) => row.word));
+  // The server processes bulk entries sequentially, so an in-batch repeat
+  // collides with the first copy; mirror that as a failed entry.
+  const seenInBatch = new Set<string>();
+
+  for (const { normalized } of candidates) {
+    if (existingWords.has(normalized.word) || seenInBatch.has(normalized.word)) {
+      results.push({ word: normalized.word, success: false, error: "Word already exists" });
+      continue;
+    }
+    seenInBatch.add(normalized.word);
+    inserts.push({
+      row: wordRowFromSave(uuidv7(), normalized, new Date().toISOString()),
+    });
+    results.push({ word: normalized.word, success: true });
+  }
+
+  if (inserts.length > 0) {
+    const steps: SqlStep[] = [];
+    for (const { row } of inserts) {
+      steps.push({
+        sql: INSERT_WORD_SQL,
+        params: [
+          row.uuid,
+          row.server_id,
+          row.word,
+          row.translation,
+          row.definitions,
+          row.examples,
+          row.phonetic,
+          row.audio_url,
+          row.source_language,
+          row.target_language,
+          row.created_at,
+          row.updated_at,
+          row.deleted_at,
+        ],
+      });
+      steps.push(enqueueOpStep("word", "upsert", { ...wordRowToPayload(row) }).step);
+    }
+    await db.batch(steps);
+  }
+
+  const imported = results.filter((r) => r.success).length;
+  return {
+    imported,
+    failed: results.length - imported,
+    total: results.length,
+    results,
+  };
+}
+
+/**
+ * Locally-created words still missing their server enrichment (saved bare
+ * while offline). Oldest first so the backfill drains in save order.
+ */
+export async function listBareWords(
+  db: SqlExecutor,
+  limit: number = 3
+): Promise<Array<{ uuid: string; word: string; sourceLanguage: string; targetLanguage: string }>> {
+  const rows = await db.all<{
+    uuid: string;
+    word: string;
+    source_language: string;
+    target_language: string;
+  }>(
+    `SELECT uuid, word, source_language, target_language FROM words
+     WHERE translation = '' AND deleted_at IS NULL
+     ORDER BY created_at ASC, rowid ASC LIMIT ?`,
+    [limit]
+  );
+  return rows.map((row) => ({
+    uuid: String(row.uuid),
+    word: String(row.word),
+    sourceLanguage: String(row.source_language || "en"),
+    targetLanguage: String(row.target_language || "zh-CN"),
+  }));
 }
