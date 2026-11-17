@@ -4,6 +4,7 @@ import { withSerwist } from "@serwist/turbopack";
 const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: false,
+    agentUpgrade: "security",
   },
   // `next dev` takes an exclusive lock at `<distDir>/lock`, so two dev servers
   // cannot share a build directory. Pointing the Playwright webServer at its own
