@@ -277,6 +277,25 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
               placeholder="Enter a word to translate..."
               label="Word"
               disabled={loading}
+              suffix={word && !loading && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWord("");
+                    setResult(null);
+                    setError("");
+                    setSaveMessage("");
+                    setOfflineSaveMessage("");
+                    setOfflineWord("");
+                  }}
+                  className="pointer-events-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                  aria-label="Clear input"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             />
             
             <Button type="submit" loading={loading} className="w-full" size="lg">
