@@ -131,3 +131,19 @@ export interface DictionaryResult {
 export interface Settings {
   srsAlgorithm: SrsAlgorithm;
 }
+
+/** One entry of a bulk word import; mirrors the server's per-entry result. */
+export interface SaveWordEntryResult {
+  word: string;
+  success: boolean;
+  id?: number;
+  error?: string;
+}
+
+/** Response shape of the bulk word import (server `/api/words` POST array). */
+export interface SaveWordsResult {
+  imported: number;
+  failed: number;
+  total: number;
+  results: SaveWordEntryResult[];
+}

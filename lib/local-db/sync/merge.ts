@@ -66,11 +66,124 @@ export async function mergePullPage(
     knownWordUuids.add(row.uuid);
   }
 
+  // Cross-device duplicate detection: two devices can create the same word
+  // offline under different uuids. The server folds the pushed copy into the
+  // row it already owns, so the pull delivers the surviving uuid while the
+  // local file still holds the locally-created one. Match those rows by word
+  // text so they can be adopted (below) instead of turning into duplicates.
+  const incomingTexts = [...new Set(page.words.map((row) => row.word))];
+  const duplicateRows =
+    incomingTexts.length > 0
+      ? await db.all<{
+          uuid: string;
+          word: string;
+          server_id: number | null;
+          updated_at: string;
+          deleted_at: string | null;
+        }>(
+          `SELECT uuid, word, server_id, updated_at, deleted_at FROM words
+           WHERE word IN (${placeholders(incomingTexts.length)})`,
+          incomingTexts
+        )
+      : [];
+  const duplicatesByText = new Map<string, typeof duplicateRows>();
+  for (const row of duplicateRows) {
+    const list = duplicatesByText.get(row.word) ?? [];
+    list.push(row);
+    duplicatesByText.set(row.word, list);
+  }
+  // The review LWW guard must know about rows that will be remapped by an
+  // adoption below: a pending-adoption target uuid is not in the database yet
+  // when the review guard map is built, so seed it with the duplicate's
+  // last-review timestamp after the remap happens.
+  const otherTextRows = (payload: WordPayload) =>
+    (duplicatesByText.get(payload.word) ?? []).filter(
+      (row) => row.uuid !== payload.uuid && row.deleted_at === null
+    );
+  const reviewGuardTimestamps = new Map<string, string>();
+  for (const payload of page.words) {
+    if (pendingWords.has(payload.uuid)) continue;
+    const dup = otherTextRows(payload).find((row) => !pendingWords.has(row.uuid));
+    if (dup) reviewGuardTimestamps.set(payload.uuid, dup.uuid);
+  }
+
+  /**
+   * Adopts a locally-created duplicate under the server's surviving uuid:
+   * remaps its reviews (last-reviewed LWW) and history, rewrites any still
+   * pending review/history ops so they reference the surviving uuid (the
+   * server no longer knows the old one — without this a queued review op
+   * would be rejected and pause sync), then removes the duplicate row.
+   */
+  const adoptionSteps = (payload: WordPayload, dupUuid: string): SqlStep[] => [
+    {
+      sql: `INSERT INTO reviews (
+              word_uuid, ease_factor, interval, repetitions, next_review_date,
+              last_reviewed, stability, difficulty, fsrs_state, lapses,
+              fsrs_reps, fsrs_last_review, updated_at
+            )
+            SELECT ?, ease_factor, interval, repetitions, next_review_date,
+              last_reviewed, stability, difficulty, fsrs_state, lapses,
+              fsrs_reps, fsrs_last_review, updated_at
+            FROM reviews WHERE word_uuid = ?
+            ON CONFLICT(word_uuid) DO UPDATE SET
+              ease_factor = excluded.ease_factor,
+              interval = excluded.interval,
+              repetitions = excluded.repetitions,
+              next_review_date = excluded.next_review_date,
+              last_reviewed = excluded.last_reviewed,
+              stability = excluded.stability,
+              difficulty = excluded.difficulty,
+              fsrs_state = excluded.fsrs_state,
+              lapses = excluded.lapses,
+              fsrs_reps = excluded.fsrs_reps,
+              fsrs_last_review = excluded.fsrs_last_review,
+              updated_at = excluded.updated_at
+            WHERE COALESCE(excluded.last_reviewed, '') > COALESCE(reviews.last_reviewed, '')`,
+      params: [payload.uuid, dupUuid],
+    },
+    {
+      sql: "DELETE FROM reviews WHERE word_uuid = ?",
+      params: [dupUuid],
+    },
+    {
+      sql: "UPDATE review_history SET word_uuid = ? WHERE word_uuid = ?",
+      params: [payload.uuid, dupUuid],
+    },
+    {
+      sql: `UPDATE sync_ops SET payload = json_set(payload, '$.wordUuid', ?)
+            WHERE entity IN ('review', 'history')
+              AND json_extract(payload, '$.wordUuid') = ?`,
+      params: [payload.uuid, dupUuid],
+    },
+    {
+      sql: "DELETE FROM words WHERE uuid = ?",
+      params: [dupUuid],
+    },
+  ];
+
   for (const payload of page.words) {
     if (pendingWords.has(payload.uuid)) continue;
 
+    // Adopt a locally-created duplicate first: its row must leave the unique
+    // word-text index before the incoming row inserts. The local partial
+    // unique index allows at most one non-deleted row per word text.
+    const otherRows = otherTextRows(payload);
+    const dup = otherRows.find((row) => !pendingWords.has(row.uuid));
+    const pendingDup = otherRows.find((row) => pendingWords.has(row.uuid));
+    if (dup) {
+      steps.push(...adoptionSteps(payload, dup.uuid));
+    }
+
     const local = localWords.get(payload.uuid);
     if (!local) {
+      if (!dup && pendingDup) {
+        // A pending duplicate still occupies the word-text index (its op
+        // has not pushed yet — e.g. a huge backlog past the push batch
+        // cap). Skip the word this cycle: the op pushes first, the server
+        // folds it into the surviving row and bumps its updated_at, and
+        // the next pull re-delivers the word for adoption.
+        continue;
+      }
       steps.push({
         sql: `INSERT INTO words (
                 uuid, server_id, word, translation, definitions, examples,
@@ -118,17 +231,28 @@ export async function mergePullPage(
   }
 
   const incomingReviewUuids = page.reviews.map((row) => row.wordUuid);
+  const reviewGuardUuids = [
+    ...new Set([
+      ...incomingReviewUuids,
+      ...reviewGuardTimestamps.keys(),
+      ...reviewGuardTimestamps.values(),
+    ]),
+  ];
   const localReviewRows =
-    incomingReviewUuids.length > 0
+    reviewGuardUuids.length > 0
       ? await db.all<{ word_uuid: string; updated_at: string }>(
           `SELECT word_uuid, updated_at FROM reviews
-           WHERE word_uuid IN (${placeholders(incomingReviewUuids.length)})`,
-          incomingReviewUuids
+           WHERE word_uuid IN (${placeholders(reviewGuardUuids.length)})`,
+          reviewGuardUuids
         )
       : [];
   const localReviews = new Map(
     localReviewRows.map((row) => [row.word_uuid, row.updated_at])
   );
+  for (const [targetUuid, dupUuid] of reviewGuardTimestamps) {
+    const dupReview = localReviewRows.find((row) => row.word_uuid === dupUuid);
+    if (dupReview) localReviews.set(targetUuid, dupReview.updated_at);
+  }
 
   for (const payload of page.reviews) {
     if (pendingReviews.has(payload.wordUuid)) continue;

@@ -1,3 +1,5 @@
+import { bumpDataVersion } from "../../data/data-version";
+import { withFetchTimeout } from "../../data/fetch-timeout";
 import { encodeCursor, ZERO_CURSOR, type SyncCursor } from "../../sync/cursor";
 import type { PullPage } from "../../sync/server-pull";
 import type { SyncPushResponse } from "../../sync/types";
@@ -26,6 +28,8 @@ export interface SyncStatus {
 
 const MAX_PUSH_BATCHES = 10;
 const MAX_PULL_PAGES = 20;
+/** A hung sync request must fail fast on a bad network. */
+const SYNC_TIMEOUT_MS = 15000;
 
 let paused = false;
 let running = false;
@@ -121,7 +125,10 @@ export async function pushPendingOps(
   db: SqlExecutor,
   options: PushPendingOptions = {}
 ): Promise<number> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = withFetchTimeout(
+    options.fetchImpl ?? fetch,
+    SYNC_TIMEOUT_MS
+  );
   const ops = await getPendingOps(db, 200);
   if (ops.length === 0) return 0;
 
@@ -188,10 +195,11 @@ export async function runSyncOnce(
 
   running = true;
   emit({ phase: "syncing", error: null, rejectedOpId: null });
+  const timedFetch = withFetchTimeout(fetchImpl, SYNC_TIMEOUT_MS);
 
   try {
     for (let batch = 0; batch < MAX_PUSH_BATCHES; batch += 1) {
-      const settled = await pushPendingOps(db, { fetchImpl });
+      const settled = await pushPendingOps(db, { fetchImpl: timedFetch });
       if (settled === 0 || paused) break;
     }
     if (paused) {
@@ -202,8 +210,11 @@ export async function runSyncOnce(
     }
 
     let cursor = await readCursor(db);
+    let mergedWords = 0;
+    let mergedReviews = 0;
+    let mergedHistory = 0;
     for (let page = 0; page < MAX_PULL_PAGES; page += 1) {
-      const response = await fetchImpl(
+      const response = await timedFetch(
         `/api/sync/pull?cursor=${encodeURIComponent(encodeCursor(cursor))}`,
         { credentials: "same-origin" }
       );
@@ -213,13 +224,20 @@ export async function runSyncOnce(
       }
 
       const body = (await response.json()) as PullPage;
-      await mergePullPage(db, body);
+      const stats = await mergePullPage(db, body);
+      mergedWords += stats.words;
+      mergedReviews += stats.reviews;
+      mergedHistory += stats.history;
       const next = body.nextCursor;
       const settledCursor = sameCursor(next, cursor);
       cursor = next;
       await setMeta(db, "sync_cursor", JSON.stringify(cursor));
       if (settledCursor) break;
     }
+
+    // Pages showing an offline cold-start empty state re-fetch when this
+    // counter moves; pages with content on screen ignore it.
+    if (mergedWords + mergedReviews + mergedHistory > 0) bumpDataVersion();
 
     const lastSyncedAt = clock().toISOString();
     await setMeta(db, "last_synced_at", lastSyncedAt);
@@ -253,6 +271,11 @@ export interface SchedulerOptions {
   db: () => SqlExecutor | null;
   intervalMs?: number;
   fetchImpl?: typeof fetch;
+  /**
+   * Runs after every fully successful sync cycle while the database is open
+   * (used for the offline-word backfill job). Must not throw.
+   */
+  onIdle?: (db: SqlExecutor) => void;
 }
 
 /**
@@ -268,9 +291,13 @@ export function startSyncScheduler(options: SchedulerOptions): () => void {
     timer = setTimeout(() => {
       const db = options.db();
       if (!db) return;
-      void runSyncOnce(db, { fetchImpl: options.fetchImpl }).catch(() => {
-        // 401 is handled by the auth layer; other errors surface via status
-      });
+      void runSyncOnce(db, { fetchImpl: options.fetchImpl })
+        .then((result) => {
+          if (result.phase === "idle" && options.onIdle) options.onIdle(db);
+        })
+        .catch(() => {
+          // 401 is handled by the auth layer; other errors surface via status
+        });
     }, 250);
   };
 

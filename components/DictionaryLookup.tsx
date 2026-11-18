@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Card, CardContent } from "@/components/ui/Card";
 import { formatPhonetic } from "@/lib/format/phonetic";
-import { ApiError } from "@/lib/data";
+import { ApiError, isTimeoutError } from "@/lib/data";
 import { useData } from "@/lib/data/use-data";
 
 interface LookupSource {
@@ -93,6 +93,10 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [saveRequiresAuth, setSaveRequiresAuth] = useState(false);
+  const [offlineWord, setOfflineWord] = useState("");
+  // Separate from `saveMessage` so the confirmation survives the offline
+  // card unmounting once the word is stored.
+  const [offlineSaveMessage, setOfflineSaveMessage] = useState("");
 
   const languageOptions = [
     { value: "en", label: "English" },
@@ -115,6 +119,7 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
       setError("");
       setResult(null);
       setSaveMessage("");
+      setOfflineSaveMessage("");
       setSaveRequiresAuth(false);
 
       try {
@@ -125,7 +130,20 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
         });
         setResult(translated);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Translation failed");
+        // A bad network is not a dead end: the word can still be saved bare
+        // (offline) and enriched by the background backfill once the
+        // connection returns.
+        const offline =
+          (typeof navigator !== "undefined" && navigator.onLine === false) ||
+          isTimeoutError(err);
+        setError(
+          offline
+            ? "You're offline — the dictionary is unreachable right now."
+            : err instanceof Error
+              ? err.message
+              : "Translation failed"
+        );
+        setOfflineWord(offline ? query : "");
       } finally {
         setLoading(false);
       }
@@ -152,11 +170,11 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
 
   const handleSave = async () => {
     if (!result) return;
-    
+
     setSaving(true);
     setSaveMessage("");
     setSaveRequiresAuth(false);
-    
+
     try {
       await data.saveWord({
         word: result.word,
@@ -175,6 +193,43 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
         setSaveMessage("");
       } else {
         setSaveMessage(err instanceof Error ? err.message : "Save failed");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Offline escape hatch: store the word alone; the sync op carries it to the
+  // server and the backfill job adds translation/phonetic once online.
+  const handleSaveOffline = async () => {
+    if (!offlineWord) return;
+
+    setSaving(true);
+    setSaveMessage("");
+    setOfflineSaveMessage("");
+    setSaveRequiresAuth(false);
+
+    try {
+      await data.saveWord({
+        word: offlineWord,
+        translation: "",
+        definitions: [],
+        examples: [],
+        phonetic: undefined,
+        audioUrl: undefined,
+        sourceLanguage: sourceLang,
+        targetLanguage: targetLang,
+      });
+      setOfflineWord("");
+      setError("");
+      setOfflineSaveMessage(
+        "Word saved offline. Its translation will sync once you're back online."
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setSaveRequiresAuth(true);
+      } else {
+        setOfflineSaveMessage(err instanceof Error ? err.message : "Save failed");
       }
     } finally {
       setSaving(false);
@@ -222,6 +277,25 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
               placeholder="Enter a word to translate..."
               label="Word"
               disabled={loading}
+              suffix={word && !loading && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWord("");
+                    setResult(null);
+                    setError("");
+                    setSaveMessage("");
+                    setOfflineSaveMessage("");
+                    setOfflineWord("");
+                  }}
+                  className="pointer-events-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                  aria-label="Clear input"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             />
             
             <Button type="submit" loading={loading} className="w-full" size="lg">
@@ -235,6 +309,40 @@ export function DictionaryLookup({ initialWord = "" }: DictionaryLookupProps) {
         <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300" role="alert">
           {error}
         </div>
+      )}
+
+      {offlineWord && !loading && (
+        <Card variant="outlined">
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1">
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">{offlineWord}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Save it now without a translation — Vocleap fills it in once
+                  you&apos;re back online.
+                </p>
+              </div>
+              <Button onClick={handleSaveOffline} loading={saving} variant="primary">
+                Save word anyway
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Outside the offline card above: the card unmounts on success, but
+          the confirmation must stay visible. */}
+      {offlineSaveMessage && (
+        <p
+          className={`text-sm ${
+            offlineSaveMessage.includes("failed") || offlineSaveMessage.includes("Failed")
+              ? "text-red-600 dark:text-red-400"
+              : "text-green-600 dark:text-green-400"
+          }`}
+          role="status"
+        >
+          {offlineSaveMessage}
+        </p>
       )}
 
       {result && (

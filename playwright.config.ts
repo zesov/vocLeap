@@ -38,6 +38,8 @@ export default defineConfig({
     command: `rm -f ${TEST_DB} ${TEST_DB}-wal ${TEST_DB}-shm && bunx next dev -p ${TEST_PORT}`,
     url: BASE_URL,
     reuseExistingServer: false,
+    // A cold `.next-test` compile (Turbopack) can take well over the default.
+    timeout: 240_000,
     env: {
       DB_MODE: "local",
       DB_PATH: TEST_DB,
@@ -45,6 +47,12 @@ export default defineConfig({
       // Own build directory, so this server can run alongside `bun run dev`
       // (Next.js locks a dev server to its distDir).
       NEXT_DIST_DIR: ".next-test",
+      // Next 16's agent-upgrade nudge can STOP `next dev` to show an
+      // interactive security-upgrade menu, which kills the webServer mid-run.
+      // This combination takes the early-return path in the nudge logic
+      // (requested policy + CI), so the test server never prompts.
+      __NEXT_AGENT_UPGRADE: "security",
+      CI: "1",
     },
   },
 });

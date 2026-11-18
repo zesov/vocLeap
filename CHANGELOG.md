@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-11-18
+
+### Added
+- **Network watchdog / bad-network resilience** — Every client-side fetch now has a timeout (remote 6 s, dictionary 20 s, sync 15 s); a hanging request fails fast instead of freezing the UI. Bootstrap sync races a 2.5 s deadline — the local DB publishes immediately and the pull continues in the background. Pages showing nothing (offline cold start) automatically re-fetch when the first pull merges data (`lib/data/fetch-timeout.ts`, `lib/deadline.ts`, `lib/data/data-version.ts`, `components/LocalDbInit.tsx`).
+- **Local-first word creation** — `saveWord` writes the word row and its sync op in one atomic batch, working fully offline; the op pushes when connectivity returns. New `DataApi.saveWords` routes bulk imports through the same local-first path (`lib/data/local.ts`, `lib/local-db/operations.ts`, `lib/data/api.ts`).
+- **Offline dictionary escape hatch** — When a lookup fails on a bad network, DictionaryLookup offers "Save word anyway" to store a bare word; the background backfill job enriches it (translation, phonetic) once back online (`components/DictionaryLookup.tsx`, `lib/local-db/backfill.ts`, `lib/local-db/sync/engine.ts`).
+- **Cross-device duplicate adoption** — Two devices creating the same word offline under different UUIDs are merged: `mergePullPage` finds the local same-text row, remaps its reviews (last-reviewed LWW) and history to the surviving UUID, rewrites pending review/history ops to the surviving UUID, and deletes the duplicate. A pending duplicate defers the incoming insert instead of violating the unique index (`lib/local-db/sync/merge.ts`).
+- **Dictionary search clear button** — The word input now shows an × icon to clear the query, result, and all messages (`components/ui/Input.tsx`, `components/DictionaryLookup.tsx`).
+- **Public pages boot local DB** — The `(public)` layout now mounts `LocalDbInit` + `SyncStatus` for signed-in users, so a direct `/dictionary` load can use the dict cache and offline save (`app/(public)/layout.tsx`).
+
+### Changed
+- **SyncStatus calm timeout banner** — Timed-out syncs show "Network too slow — sync paused for now and will retry automatically" instead of an error wall (`components/SyncStatus.tsx`).
+- **ReviewSession late-merge rescue** — An offline cold start (queue loaded before the first pull) re-fetches when the pull merges data, but only while no session has started (`components/ReviewSession.tsx`).
+- **Words page offline empty state hint** — "You're offline — your words will appear here after the first sync" (`app/(app)/words/page.tsx`).
+- **Playwright webServer** — Pinned `__NEXT_AGENT_UPGRADE=security` + `CI=1` so the Next 16 upgrade nudge never stops the dev server mid-run; cold-start timeout 240 s (`playwright.config.ts`).
+
+### Fixed
+- **Import while offline** — File imports now work offline via the local-first facade; no online gate (`app/(app)/words/page.tsx`).
+- **Timeout error surfacing** — Sync timeout errors surface as `ApiError("Network request timed out", 0)` and are retried by the 60 s scheduler (`lib/data/fetch-timeout.ts`, `lib/local-db/sync/engine.ts`).
+
 ## [0.10.2] - 2026-11-14
 
 ### Fixed

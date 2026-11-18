@@ -5,8 +5,8 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { SortSelect } from "@/components/ui/SortSelect";
 import { formatPhonetic } from "@/lib/format/phonetic";
+import { useSyncDataVersion } from "@/lib/data/data-version";
 import { useData } from "@/lib/data/use-data";
-import { requestSync } from "@/lib/local-db/sync/trigger";
 
 const ITEMS_PER_PAGE = 30;
 
@@ -38,6 +38,10 @@ function isSortOption(value: unknown): value is SortOption {
 
 export default function WordsPage() {
   const data = useData();
+  // Bumped whenever a background sync pull merges server data. An offline
+  // cold start shows an empty list first; this re-fetches it once the first
+  // pull fills the local file.
+  const dataVersion = useSyncDataVersion();
   const [words, setWords] = useState<WordItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -109,15 +113,16 @@ export default function WordsPage() {
   );
 
   // Fetches the first page. Re-runs when `data` changes identity (the
-  // remote→local transition) — the swap is silent because hasDataRef is set,
-  // so the already-visible cards never blank out. Once cards are on screen
-  // the transition must not rebuild the list at all: a fresh page-1 fetch
-  // would clobber the active sort and scroll position; only a page that
-  // still has nothing to show (offline cold start, failed fetch) re-fetches.
+  // remote→local transition) and when a sync pull merges data into an empty
+  // list (dataVersion) — the swap is silent because hasDataRef is set, so the
+  // already-visible cards never blank out. Once cards are on screen neither
+  // transition may rebuild the list at all: a fresh page-1 fetch would clobber
+  // the active sort and scroll position; only a page that still has nothing
+  // to show (offline cold start, failed fetch) re-fetches.
   useEffect(() => {
     if (hasDataRef.current) return;
     fetchWords(0, false, sortRef.current);
-  }, [fetchWords]);
+  }, [fetchWords, dataVersion]);
 
   const handleLoadMore = useCallback(() => {
     if (hasMore && !loadingMore && !loading) {
@@ -259,29 +264,14 @@ export default function WordsPage() {
         return;
       }
 
-      if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        setImportResult({
-          imported: 0,
-          failed: 0,
-          total: 0,
-          message: "Importing words is only available while online",
-        });
-        setImporting(false);
-        return;
-      }
-
-      const res = await fetch("/api/words", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entries),
-      });
-
-      const result = await res.json();
+      // Local-first when the local DB is ready (works offline: rows + sync
+      // ops are written to the device and pushed when connectivity returns);
+      // otherwise the remote bulk POST.
+      const result = await data.saveWords(entries);
 
       if (result.imported > 0) {
         setOffset(0);
         await fetchWords(0, false, sort);
-        requestSync();
       }
 
       setImportResult({
@@ -369,6 +359,12 @@ export default function WordsPage() {
         <Card variant="outlined">
           <CardContent className="py-12 text-center">
             <p className="text-gray-500 dark:text-gray-400">No words saved yet. Look up words in the dictionary or import from Google Translate above!</p>
+            {typeof navigator !== "undefined" && navigator.onLine === false && (
+              <p className="text-sm text-blue-600 dark:text-blue-400 mt-3">
+                You&apos;re offline — your words will appear here after the
+                first sync.
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : (

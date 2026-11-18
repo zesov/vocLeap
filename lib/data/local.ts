@@ -8,6 +8,8 @@ import {
   getStats,
   getWordHistory,
   getWordsPage,
+  saveWordLocal,
+  saveWordsLocal,
   setAlgorithmLocal,
 } from "../local-db/operations";
 import { getReviewState, submitReviewLocal } from "../local-db/submit-review";
@@ -110,14 +112,20 @@ export function createLocalData(
     },
 
     async saveWord(input) {
-      if (!isOnline()) {
-        throw new Error("Adding new words is only available online");
-      }
-      const saved = await remote.saveWord(input);
-      // Pull the server row back so the local queue sees the new word now
-      // instead of at the next scheduled sync.
+      // Local-first, works offline: the word row and its sync op are written
+      // in one atomic batch and pushed as soon as connectivity allows.
+      const saved = await saveWordLocal(db, input);
       notify();
       return saved;
+    },
+
+    async saveWords(entries) {
+      // Bulk import mirrors the server's semantics: per-entry results,
+      // duplicates fail without overwriting. Nothing notifies the sync
+      // trigger when every entry failed (no ops were written).
+      const result = await saveWordsLocal(db, entries);
+      if (result.imported > 0) notify();
+      return result;
     },
 
     async translate(input) {
