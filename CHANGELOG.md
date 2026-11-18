@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-11-18
+
 ### Added
 - **Network watchdog / bad-network resilience** — Every client-side fetch now has a timeout (remote 6 s, dictionary 20 s, sync 15 s); a hanging request fails fast instead of freezing the UI. Bootstrap sync races a 2.5 s deadline — the local DB publishes immediately and the pull continues in the background. Pages showing nothing (offline cold start) automatically re-fetch when the first pull merges data (`lib/data/fetch-timeout.ts`, `lib/deadline.ts`, `lib/data/data-version.ts`, `components/LocalDbInit.tsx`).
 - **Local-first word creation** — `saveWord` writes the word row and its sync op in one atomic batch, working fully offline; the op pushes when connectivity returns. New `DataApi.saveWords` routes bulk imports through the same local-first path (`lib/data/local.ts`, `lib/local-db/operations.ts`, `lib/data/api.ts`).
