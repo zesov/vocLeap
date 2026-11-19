@@ -30,3 +30,38 @@ export function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | nu
       });
   });
 }
+
+/**
+ * Same as `withDeadline` but returns an object indicating whether the deadline
+ * was hit. This allows the caller to surface a "loading server data" banner
+ * instead of silently showing empty state.
+ */
+export function withDeadlineStatus<T>(
+  promise: Promise<T>,
+  ms: number
+): Promise<{ value: T | null; timedOut: boolean }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve({ value: null, timedOut: true });
+      }
+    }, ms);
+    promise
+      .then((value) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve({ value, timedOut: false });
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve({ value: null, timedOut: true });
+        }
+      });
+  });
+}

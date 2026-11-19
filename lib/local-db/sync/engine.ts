@@ -24,21 +24,34 @@ export interface SyncStatus {
   error: string | null;
   /** Set while paused: the op the server rejected, so the UI can discard it. */
   rejectedOpId: string | null;
+  /** Number of consecutive sync errors (for exponential backoff). */
+  consecutiveErrors: number;
+  /** Next scheduled retry time (ISO string) when in error phase. */
+  nextRetryAt: string | null;
 }
 
 const MAX_PUSH_BATCHES = 10;
 const MAX_PULL_PAGES = 20;
 /** A hung sync request must fail fast on a bad network. */
 const SYNC_TIMEOUT_MS = 15000;
+/** Base interval for scheduler (60s). */
+const BASE_INTERVAL_MS = 60_000;
+/** Maximum backoff interval (30 minutes). */
+const MAX_BACKOFF_MS = 30 * 60 * 1000;
+/** Oplog size threshold for "drain mode" (push continuously until empty). */
+const DRAIN_MODE_THRESHOLD = 1000;
 
 let paused = false;
 let running = false;
+let consecutiveErrors = 0;
 let status: SyncStatus = {
   phase: "idle",
   pending: 0,
   lastSyncedAt: null,
   error: null,
   rejectedOpId: null,
+  consecutiveErrors: 0,
+  nextRetryAt: null,
 };
 const listeners = new Set<(status: SyncStatus) => void>();
 
@@ -170,6 +183,10 @@ export async function pushPendingOps(
     });
     return settled.length;
   }
+  // Success: clear any stale rejectedOpId from status (e.g., user clicked Retry)
+  if (status.rejectedOpId) {
+    emit({ rejectedOpId: null });
+  }
   return settled.length;
 }
 
@@ -198,7 +215,11 @@ export async function runSyncOnce(
   const timedFetch = withFetchTimeout(fetchImpl, SYNC_TIMEOUT_MS);
 
   try {
-    for (let batch = 0; batch < MAX_PUSH_BATCHES; batch += 1) {
+    // Drain mode: if oplog is large, push continuously without batch limit
+    const pending = await pendingCount(db);
+    const maxBatches = pending > DRAIN_MODE_THRESHOLD ? Number.MAX_SAFE_INTEGER : MAX_PUSH_BATCHES;
+
+    for (let batch = 0; batch < maxBatches; batch += 1) {
       const settled = await pushPendingOps(db, { fetchImpl: timedFetch });
       if (settled === 0 || paused) break;
     }
@@ -220,7 +241,18 @@ export async function runSyncOnce(
       );
       if (response.status === 401) throw new AuthRequiredError();
       if (!response.ok) {
-        throw new Error(`Pull failed with ${response.status}`);
+        // Transient pull error: don't throw, preserve cursor, set transient error.
+        // The scheduler will retry with exponential backoff.
+        const errorMsg = `Pull failed with ${response.status}`;
+        consecutiveErrors += 1;
+        const nextRetryAt = new Date(Date.now() + computeBackoff(consecutiveErrors)).toISOString();
+        return emit({
+          phase: "error",
+          pending: await pendingCount(db),
+          error: errorMsg,
+          consecutiveErrors,
+          nextRetryAt,
+        });
       }
 
       const body = (await response.json()) as PullPage;
@@ -241,12 +273,15 @@ export async function runSyncOnce(
 
     const lastSyncedAt = clock().toISOString();
     await setMeta(db, "last_synced_at", lastSyncedAt);
+    consecutiveErrors = 0;
     return emit({
       phase: "idle",
       pending: await pendingCount(db),
       lastSyncedAt,
       error: null,
       rejectedOpId: null,
+      consecutiveErrors: 0,
+      nextRetryAt: null,
     });
   } catch (error) {
     if (error instanceof AuthRequiredError) {
@@ -254,17 +289,42 @@ export async function runSyncOnce(
         phase: "error",
         pending: await pendingCount(db),
         error: "Authentication required",
+        consecutiveErrors: 0,
+        nextRetryAt: null,
       });
       throw error;
     }
+    consecutiveErrors += 1;
+    const nextRetryAt = new Date(Date.now() + computeBackoff(consecutiveErrors)).toISOString();
     return emit({
       phase: "error",
       pending: await pendingCount(db),
       error: error instanceof Error ? error.message : String(error),
+      consecutiveErrors,
+      nextRetryAt,
     });
   } finally {
     running = false;
   }
+}
+
+function computeBackoff(errors: number): number {
+  return Math.min(BASE_INTERVAL_MS * Math.pow(2, errors - 1), MAX_BACKOFF_MS);
+}
+
+/**
+ * Call this on pagehide/beforeunload to clear the running flag so the next
+ * session can start a sync immediately. This handles the case where the page
+ * unloads mid-sync and the worker context is lost.
+ */
+export function clearRunningFlag(): void {
+  running = false;
+}
+
+// Attach global handlers to clear running flag on page unload
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", clearRunningFlag);
+  window.addEventListener("beforeunload", clearRunningFlag);
 }
 
 export interface SchedulerOptions {
@@ -281,12 +341,12 @@ export interface SchedulerOptions {
 /**
  * Runs a sync immediately, on an interval, when the tab becomes visible and
  * when connectivity returns. Returns a stop function.
+ * Uses exponential backoff on consecutive errors.
  */
 export function startSyncScheduler(options: SchedulerOptions): () => void {
-  const intervalMs = options.intervalMs ?? 60_000;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const run = () => {
+  const scheduleRun = (delayMs: number) => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       const db = options.db();
@@ -298,15 +358,22 @@ export function startSyncScheduler(options: SchedulerOptions): () => void {
         .catch(() => {
           // 401 is handled by the auth layer; other errors surface via status
         });
-    }, 250);
+    }, delayMs);
+  };
+
+  const run = () => {
+    const delay = consecutiveErrors > 0 ? computeBackoff(consecutiveErrors) : 250;
+    scheduleRun(delay);
   };
 
   const onVisible = () => {
     if (document.visibilityState === "visible") run();
   };
 
-  run();
-  const interval = setInterval(run, intervalMs);
+  // Initial run with short delay
+  scheduleRun(250);
+  // Periodic runs use dynamic interval based on backoff
+  const interval = setInterval(run, BASE_INTERVAL_MS);
   window.addEventListener("online", run);
   document.addEventListener("visibilitychange", onVisible);
 

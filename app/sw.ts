@@ -8,6 +8,7 @@ import {
   ExpirationPlugin,
   NetworkOnly,
   Serwist,
+  StaleWhileRevalidate,
 } from "serwist";
 
 // `self.__SW_MANIFEST` is a magic string replaced with the precache
@@ -21,6 +22,21 @@ declare global {
 declare const self: ServiceWorkerGlobalScope;
 
 const DAY_SECONDS = 24 * 60 * 60;
+const APP_SHELL_ROUTES = ["/", "/review", "/words", "/review-history", "/dictionary", "/login", "/signup"];
+
+// Suppress "Cannot write to a CLOSED writable stream" errors from
+// StaleWhileRevalidate background cache updates. These are non-fatal
+// but noisy in the console.
+self.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  if (
+    reason instanceof Error &&
+    (reason.message.includes("CLOSED writable stream") ||
+      reason.message.includes("Cannot close a CLOSED"))
+  ) {
+    event.preventDefault(); // Prevent console error
+  }
+});
 
 // First matching route wins: custom entries must precede `defaultCache`
 // (the app skeleton: documents NetworkFirst, _next/static, fonts, ...).
@@ -30,6 +46,25 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
+    {
+      // App shell routes: serve cached HTML immediately, revalidate in background.
+      // This prevents white screen on slow/offline networks.
+      matcher: ({ url }) => {
+        const pathname = url.pathname;
+        return APP_SHELL_ROUTES.some(
+          (route) => pathname === route || pathname.startsWith(route + "/")
+        );
+      },
+      handler: new StaleWhileRevalidate({
+        cacheName: "app-shell",
+        plugins: [
+          new ExpirationPlugin({
+            maxEntries: 32,
+            maxAgeSeconds: 7 * DAY_SECONDS,
+          }),
+        ],
+      }),
+    },
     {
       // App data must never be served from a cache: the local database is
       // the only offline source of truth for API responses.

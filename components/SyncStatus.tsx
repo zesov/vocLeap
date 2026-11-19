@@ -61,12 +61,31 @@ export default function SyncStatus() {
     );
   }
 
-  // A timed-out sync is transient (the scheduler retries every 60 s and on
-  // connectivity events); keep it calm instead of an error wall.
+  // A timed-out sync is transient (the scheduler retries with exponential
+  // backoff on connectivity events); keep it calm instead of an error wall.
   if (sync.phase === "error" && sync.error?.includes("timed out")) {
     return (
       <p className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-center text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">
         Network too slow — sync paused for now and will retry automatically.
+      </p>
+    );
+  }
+
+  // Generic error phase with exponential backoff info
+  if (sync.phase === "error") {
+    const retryInfo = sync.nextRetryAt
+      ? ` Next retry around ${new Date(sync.nextRetryAt).toLocaleTimeString()}.`
+      : "";
+    return (
+      <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-center text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        Sync failed: {sync.error}.{retryInfo}
+        <button
+          type="button"
+          className="ml-2 rounded-md border border-red-300 px-2 py-0.5 font-medium hover:bg-red-100 dark:border-red-800 dark:hover:bg-red-900/40"
+          onClick={() => requestSync()}
+        >
+          Retry now
+        </button>
       </p>
     );
   }
